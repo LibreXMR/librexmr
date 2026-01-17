@@ -1,0 +1,52 @@
+{
+  "output": {
+    "filePath": "context-full.xml",
+    "style": "xml",
+    "showLineNumbers": true
+  },
+  "ignore": {
+    "customPatterns": [
+      "node_modules/**",
+      ".git/**",
+      ".cursor/**",
+      "solana-release/**",
+      "**/target/**",
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/.npm-cache/**",
+      "sbf-sdk/**",
+      ".sbf-sdk/**",
+      "**/swap_state/**",
+      "**/xmr_simulator_state/**",
+      
+      "context*.xml",
+      "context-*.xml",
+      "*.log",
+      ".DS_Store"
+    ]
+  },
+  "include": [
+    "README.md",
+    "Makefile",
+    "repomix.config.json",
+    ".github/workflows/ci.yml",
+    "SECURITY.md",
+    "AUDIT_STATUS.md",
+    "docs/**",
+    "docs/HARDENING.md",
+    "Anchor.toml",
+    "Cargo.toml",
+    "Cargo.lock",
+    "test_vectors/**",
+    "programs/**",
+    "tools/**",
+    "tools/xmr_wallet/**",
+    "frontend/**",
+    "vendor/curve25519-dalek/Cargo.toml",
+    "vendor/curve25519-dalek/README.md",
+    "vendor/curve25519-dalek/src/edwards.rs",
+    "vendor/curve25519-dalek/src/window.rs",
+    "vendor/curve25519-dalek/src/backend/vector/avx2/edwards.rs",
+    "vendor/curve25519-dalek/src/backend/vector/ifma/edwards.rs"
+  ]
+}

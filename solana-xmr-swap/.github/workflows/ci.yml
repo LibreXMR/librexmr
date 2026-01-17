@@ -1,0 +1,74 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Solana toolchain
+        run: |
+          sh -c "$(curl -sSfL https://release.solana.com/stable/install)"
+          echo "$HOME/.local/share/solana/install/active_release/bin" >> "$GITHUB_PATH"
+
+      - name: Build SBF
+        run: cargo build-sbf
+
+      - name: Integration tests (BPF)
+        run: BPF_OUT_DIR=target/deploy RUN_BPF_TESTS=1 cargo test -p atomic_lock --test integration
+
+      - name: DLEQ verifier tests
+        run: cargo test -p dleq_verifier
+
+      - name: Build swap ops tooling
+        run: cargo build -p swap_ops
+
+      - name: Swap ops tests
+        run: cargo test -p swap_ops
+
+      - name: Verify signed alert sample
+        run: cargo run -p swap_ops --bin alert_verify -- --input docs/alert_signed_sample.json
+
+      - name: Swap SDK tests
+        run: cargo test -p swap_sdk
+
+      - name: Verify signed audit log sample
+        run: cargo run -p swap_sdk --bin audit_verify -- --input docs/audit_signed_sample.json
+
+      - name: Build swap coordinator
+        run: cargo build -p swap_coordinator
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Build TS verifier
+        run: |
+          cd tools/dleq_verifier_ts
+          npm ci
+          npm run build
+
+      - name: Verify DLEQ vector (TS)
+        run: |
+          cd tools/dleq_verifier_ts
+          npm run verify
+
+      - name: Build frontend
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+
+      - name: Frontend tests
+        run: |
+          cd frontend
+          npm test
