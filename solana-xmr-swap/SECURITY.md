@@ -38,3 +38,21 @@ https://github.com/omarespejel/monero-starknet-atomic-swap
   compute limits.
 - The trust boundary and responsibility shift must be clearly documented in
   client software and integrator guides.
+
+## Monero Side (Production)
+Monero does not support HTLC hashlocks. Production swaps use adaptor
+signatures on the Monero side; the DLEQ proof binds the adaptor points so the
+secret revealed on Solana enables the Monero claim.
+
+## Known Limitations (Hackathon)
+- **Front-running risk on unlock**: the secret is revealed in the
+  `verify_and_unlock` transaction. A sophisticated attacker could observe the
+  secret in-flight and attempt to front-run with higher fees. This is a known
+  limitation for devnet demos.
+
+## Production Hardening
+- **Private transaction delivery**: use Jito bundles or private mempools to
+  avoid secret extraction/front-running on unlock.
+- **Signed alert replay protection**: include a monotonic nonce or UUID in
+  webhook payloads for stricter replay defense.
+- See `docs/PRODUCTION.md` for the full post-hackathon roadmap.

@@ -6,11 +6,15 @@ This file enumerates the materials needed for a focused audit review.
 - `AUDIT_STATUS.md`
 - `SECURITY.md`
 - `docs/INTEGRATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/DEMO.md`
 - `docs/TOOLCHAIN.md`
 - `docs/VENDOR_PATCHES.md`
 - `docs/VENDOR_PATCHES_SHA256.txt`
+- `docs/HARDENING.md`
 - `docs/ALERT_SCHEMA.json`
 - `docs/WEBHOOK_VERIFICATION.md`
+- `docs/AUDITED_LIBRARIES.md`
 - `docs/alert_signed_sample.json`
 - `docs/audit_signed_sample.json`
 
@@ -26,6 +30,8 @@ This file enumerates the materials needed for a focused audit review.
 - Watchtower: `tools/swap_ops` (optional signed webhook alerts)
 - Alert verifier: `swap_ops` (`alert-verify` binary)
 - Swap coordinator (ported state machine): `tools/swap_coordinator`
+- Monero simulator (demo): `tools/xmr_simulator`
+- Monero wallet service (production path): `tools/xmr_wallet`
 
 ## Verification Commands
 ```

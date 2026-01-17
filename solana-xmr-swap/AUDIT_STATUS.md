@@ -198,6 +198,9 @@ Solana SBF enforces a hard per‑transaction compute limit (about 1.4M CUs), and
 - SBF build is clean; integration tests pass under BPF with `RUN_BPF_TESTS=1` and `BPF_OUT_DIR`.
 - DLEQ transcript validation implemented on‑chain; full proof verification remains in unit tests and must be done off‑chain.
 - Initialize/verify_dleq/unlock/refund flows implemented with PDA checks, token transfers, events, and debug logs.
+- Frontend verifies DLEQ proofs client-side before calling `verify_dleq`.
+- Monero claim flow is simulated via `tools/xmr_simulator` for demo parity.
+- Architecture + demo walkthrough docs added for reviewers.
 - Canonical DLEQ test vector mirrored from the Starknet Monero swap implementation for client verification.
 - Off‑chain DLEQ verifier tooling shipped in Rust and a minimal TS wrapper.
 - Vendor patch summary and toolchain pins added for audit packaging.
@@ -213,6 +216,8 @@ Solana SBF enforces a hard per‑transaction compute limit (about 1.4M CUs), and
 - Sample signed webhook alert added for verification (`docs/alert_signed_sample.json`).
 - Sample signed audit log added for verification (`docs/audit_signed_sample.json`).
 - Swap coordinator added (ported state machine from the Starknet swap repo).
+- Monero wallet service scaffolding added (`tools/xmr_wallet`) for production path.
+- Audited library references documented (`docs/AUDITED_LIBRARIES.md`).
 
 ## What’s Next (Action Plan)
 1. **Document off‑chain DLEQ requirement**

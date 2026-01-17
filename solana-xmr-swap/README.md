@@ -14,6 +14,13 @@ This project implements an atomic swap lock program on Solana using Anchor.
 The on-chain program does **not** fully verify the DLEQ proof. Clients must
 verify it off-chain before calling `verify_dleq`. See `SECURITY.md` for details.
 
+## Architecture & Demo
+- Architecture overview: `docs/ARCHITECTURE.md`
+- End-to-end demo guide: `docs/DEMO.md`
+- Production roadmap: `docs/PRODUCTION.md`
+- Hardening checklist: `docs/HARDENING.md`
+- Audited libraries: `docs/AUDITED_LIBRARIES.md`
+
 ## DLEQ Test Vector
 A canonical DLEQ test vector (from the Starknet swap implementation) is stored at
 `test_vectors/dleq.json` for client-side verification and compatibility testing.
@@ -81,6 +88,18 @@ Sample signed audit log:
 cargo run -p swap_sdk --bin audit_verify -- --input docs/audit_signed_sample.json
 ```
 
+### Monero Simulation (demo only)
+The Monero claim flow is simulated for hackathon demos:
+```
+cargo run -p xmr_simulator -- lock --swap-id demo-001 --hashlock <HASHLOCK> --amount 1000000000000
+cargo run -p xmr_simulator -- claim --swap-id demo-001 --secret <SECRET>
+```
+
+### Monero Wallet (production path)
+The production Monero integration is scaffolded in `tools/xmr_wallet` and
+uses `monero-rpc` + `monero` (COMIT-aligned libraries). See:
+`docs/AUDITED_LIBRARIES.md`.
+
 ### Swap Coordinator (ported)
 `tools/swap_coordinator` orchestrates a full on-chain swap flow and is **ported and
 adapted** from the state machine in the Starknet swap repo by Omar Espejel:
@@ -96,6 +115,7 @@ cargo run -p swap_coordinator -- demo \
 - Vendor patch summary: `docs/VENDOR_PATCHES.md`
 - Vendor patch hashes: `docs/VENDOR_PATCHES_SHA256.txt`
 - Audit bundle index: `docs/AUDIT_BUNDLE.md`
+- Audited libraries: `docs/AUDITED_LIBRARIES.md`
 
 ## Build (SBF)
 If you have the Solana toolchain installed:
