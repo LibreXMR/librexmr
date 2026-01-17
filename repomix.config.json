@@ -1,0 +1,46 @@
+{
+  "output": {
+    "filePath": "context-full.xml",
+    "style": "xml",
+    "showLineNumbers": true
+  },
+  "ignore": {
+    "customPatterns": [
+      "node_modules/**",
+      ".git/**",
+      ".cursor/**",
+      "solana-release/**",
+      "solana-xmr-swap/**/target/**",
+      "solana-xmr-swap/**/node_modules/**",
+      "solana-xmr-swap/**/dist/**",
+      "solana-xmr-swap/**/.npm-cache/**",
+      
+      "context*.xml",
+      "context-*.xml",
+      "*.log",
+      ".DS_Store"
+    ]
+  },
+  "include": [
+    "Makefile",
+    "repomix.config.json",
+    ".github/workflows/ci.yml",
+    "solana-xmr-swap/README.md",
+    "solana-xmr-swap/SECURITY.md",
+    "solana-xmr-swap/AUDIT_STATUS.md",
+    "solana-xmr-swap/docs/**",
+    "solana-xmr-swap/Anchor.toml",
+    "solana-xmr-swap/Cargo.toml",
+    "solana-xmr-swap/Cargo.lock",
+    "solana-xmr-swap/test_vectors/**",
+    "solana-xmr-swap/programs/**",
+    "solana-xmr-swap/tools/**",
+    "solana-xmr-swap/frontend/**",
+    "solana-xmr-swap/vendor/curve25519-dalek/Cargo.toml",
+    "solana-xmr-swap/vendor/curve25519-dalek/README.md",
+    "solana-xmr-swap/vendor/curve25519-dalek/src/edwards.rs",
+    "solana-xmr-swap/vendor/curve25519-dalek/src/window.rs",
+    "solana-xmr-swap/vendor/curve25519-dalek/src/backend/vector/avx2/edwards.rs",
+    "solana-xmr-swap/vendor/curve25519-dalek/src/backend/vector/ifma/edwards.rs"
+  ]
+}
