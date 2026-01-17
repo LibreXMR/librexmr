@@ -1,0 +1,33 @@
+# Build artifacts
+**/target/
+**/node_modules/
+**/dist/
+**/build/
+**/.vite/
+**/.npm-cache/
+**/*.o
+**/*.a
+**/*.so
+**/*.dylib
+**/*.rlib
+**/*.exe
+**/*.wasm
+**/*.log
+
+# OS/editor
+.DS_Store
+.idea/
+.vscode/
+
+# Local env
+.env
+.env.*
+
+# Solana/Anchor
+**/.anchor/
+**/.solana/
+**/test-ledger/
+**/*.keypair
+
+# Generated context bundles
+context-*.xml
