@@ -5,8 +5,13 @@
     "tools/swap_ops",
     "tools/swap_sdk",
     "tools/swap_coordinator",
+    "tools/xmr_simulator",
+    "tools/xmr_wallet",
  ]
 resolver = "2"
 
 [patch.crates-io]
 curve25519-dalek = { path = "vendor/curve25519-dalek" }
+
+[profile.release]
+overflow-checks = true
