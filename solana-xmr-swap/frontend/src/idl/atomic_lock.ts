@@ -2,7 +2,7 @@ import type { Idl } from '@coral-xyz/anchor'
 import { PublicKey } from '@solana/web3.js'
 
 export const ATOMIC_LOCK_PROGRAM_ID = new PublicKey(
-  'Fg6PaFpoGXkYsidMpWxqSWYv7jD6f9W5KqPrk9N5Y7vC',
+  'GpE4KVAv1Pzc2uhACFU6dAcLac46995Ueh2bhrKngtrM',
 )
 
 export const ATOMIC_LOCK_IDL = {

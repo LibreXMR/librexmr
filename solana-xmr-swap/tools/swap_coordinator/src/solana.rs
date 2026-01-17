@@ -4,6 +4,7 @@ use anyhow::{Context, Result};
 use async_trait::async_trait;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
+use solana_sdk::compute_budget::ComputeBudgetInstruction;
 use solana_sdk::instruction::Instruction;
 use solana_sdk::pubkey::Pubkey;
 use solana_sdk::signature::{Keypair, Signature, Signer};
@@ -108,6 +109,10 @@ impl SolanaSwapClient {
         Ok(sig)
     }
 
+    fn compute_budget_ix(&self) -> Instruction {
+        ComputeBudgetInstruction::set_compute_unit_limit(400_000)
+    }
+
     fn derive_lock_pda(&self) -> (Pubkey, u8) {
         Pubkey::find_program_address(
             &[b"lock", self.depositor.pubkey().as_ref(), &self.hashlock],
@@ -158,7 +163,7 @@ impl SolanaClient for SolanaSwapClient {
         }
         .to_account_metas(None);
 
-        let mut instructions = vec![];
+        let mut instructions = vec![self.compute_budget_ix()];
         if let Some(ix) = depositor_token_ix {
             instructions.push(ix);
         }
@@ -183,11 +188,14 @@ impl SolanaClient for SolanaSwapClient {
         let accounts = atomic_lock::accounts::VerifyDleq { atomic_lock: lock_pda }
             .to_account_metas(None);
         let sig = self.sign_and_send(
-            vec![Instruction {
-                program_id: self.program_id,
-                accounts,
-                data: ix,
-            }],
+            vec![
+                self.compute_budget_ix(),
+                Instruction {
+                    program_id: self.program_id,
+                    accounts,
+                    data: ix,
+                },
+            ],
             &[&self.depositor],
             &self.depositor.pubkey(),
         )?;
@@ -210,7 +218,7 @@ impl SolanaClient for SolanaSwapClient {
         }
         .to_account_metas(None);
 
-        let mut instructions = vec![];
+        let mut instructions = vec![self.compute_budget_ix()];
         if let Some(ix) = unlocker_token_ix {
             instructions.push(ix);
         }
@@ -240,7 +248,7 @@ impl SolanaClient for SolanaSwapClient {
         }
         .to_account_metas(None);
 
-        let mut instructions = vec![];
+        let mut instructions = vec![self.compute_budget_ix()];
         if let Some(ix) = depositor_token_ix {
             instructions.push(ix);
         }

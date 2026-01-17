@@ -10,7 +10,7 @@ pub mod logging;
  
 use crate::state::AtomicLock;
  
- declare_id!("Fg6PaFpoGXkYsidMpWxqSWYv7jD6f9W5KqPrk9N5Y7vC");
+declare_id!("GpE4KVAv1Pzc2uhACFU6dAcLac46995Ueh2bhrKngtrM");
  
 #[derive(Accounts)]
 #[instruction(hashlock: [u8; 32])]

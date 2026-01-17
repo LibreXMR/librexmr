@@ -50,7 +50,7 @@ struct DemoArgs {
     #[arg(long, default_value = "http://127.0.0.1:8899")]
     rpc: String,
     /// Program ID (atomic_lock)
-    #[arg(long, default_value = "Fg6PaFpoGXkYsidMpWxqSWYv7jD6f9W5KqPrk9N5Y7vC")]
+    #[arg(long, default_value = "GpE4KVAv1Pzc2uhACFU6dAcLac46995Ueh2bhrKngtrM")]
     program_id: String,
     /// Depositor keypair path
     #[arg(long)]

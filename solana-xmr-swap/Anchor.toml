@@ -1,5 +1,8 @@
- [programs.localnet]
- atomic_lock = "Atomic111111111111111111111111111111111111"
+[programs.localnet]
+atomic_lock = "GpE4KVAv1Pzc2uhACFU6dAcLac46995Ueh2bhrKngtrM"
+
+[programs.devnet]
+atomic_lock = "GpE4KVAv1Pzc2uhACFU6dAcLac46995Ueh2bhrKngtrM"
  
  [provider]
  cluster = "Localnet"
