@@ -1,0 +1,26 @@
+{
+  "payload": {
+    "timestamp_unix": 1710000000,
+    "input_path": "test_vectors/dleq.json",
+    "ok": true,
+    "report": {
+      "computed_challenge": "b2cd06dd3134e6e8b6fa532a1dd2c41ab963849e6c41ccc97b1fb425a163f00c",
+      "challenge_matches": true,
+      "lhs_r1_matches": true,
+      "lhs_r2_matches": true
+    },
+    "transcript": {
+      "adaptor_point": "85ce3cf603efcf45b599cce75369e854823864e471ad297d955f32db0ade7d42",
+      "second_point": "be7b5c4cf816760b7709df6b47b393d8cdd1605e06e2e2080944d684fad0795c",
+      "y_point": "c9a3f86aae465f0e56513864510f3997561fa2c9e85ea21dc2292309f3cd6022",
+      "r1": "34e31fa42ec011caed7fa1d72125b03ca52659e04a0e7aca42d9906f2509ef11",
+      "r2": "2ff0af08f9d4654db8e6cb72c226fbb42592f4f2df3f6f06cafbc033fd9884f5",
+      "challenge": "b2cd06dd3134e6e8b6fa532a1dd2c41ab963849e6c41ccc97b1fb425a163f00c",
+      "response": "1eedaa629d5bb28d173153ff275608169dc822d2c9dfb450af3254d9ff100802",
+      "hashlock": "b6acca81a0939a856c35e4c4188e95b91731aab1d4629a4cee79dd09ded4fc94"
+    }
+  },
+  "payload_hash": "47efbc9a3bf00d784589fb88932f2e61b4815530e5f3e2ae2a67027a7351208e",
+  "signature": "fe3ddd29950903f1127bf870b61d798abfc04e5b493769e15b8306ee93c2c83f3e3e96d4c7f644aa9793df87e460ed57e75df3379e46df097f0c994a619ec102",
+  "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+}

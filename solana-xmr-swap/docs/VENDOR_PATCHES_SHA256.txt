@@ -1,0 +1,4 @@
+44c95422791ef971f20fb1072b12f512248fa72f30d50461bffb623e8321a44d  vendor/curve25519-dalek/src/window.rs
+b7eebb0aa9467d8d35f162c8988b9f3f4a379445d2f37314055cc615556b77c4  vendor/curve25519-dalek/src/backend/vector/avx2/edwards.rs
+4fcb700ee6af06e81902e99fa62f65c1851e27edc9e983d1e928756120b9f457  vendor/curve25519-dalek/src/backend/vector/ifma/edwards.rs
+5c63cf1997c906b6fad8f298fb5094ef53da0e47f2a671310ad765a8c9a51a29  vendor/curve25519-dalek/src/edwards.rs

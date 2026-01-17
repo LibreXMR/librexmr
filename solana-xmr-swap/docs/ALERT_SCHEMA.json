@@ -1,0 +1,41 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "Swap Alert Payload",
+  "type": "object",
+  "required": [
+    "event",
+    "pda",
+    "dleq_verified",
+    "unlocked",
+    "expired",
+    "now_unix",
+    "lock_until"
+  ],
+  "properties": {
+    "event": {
+      "type": "string",
+      "description": "Event type (state_change or expired_unlocked_false)"
+    },
+    "pda": {
+      "type": "string",
+      "description": "Swap account PDA"
+    },
+    "dleq_verified": { "type": "boolean" },
+    "unlocked": { "type": "boolean" },
+    "expired": { "type": "boolean" },
+    "now_unix": { "type": "integer" },
+    "lock_until": { "type": "integer" },
+    "payload_hash": {
+      "type": "string",
+      "description": "Optional SHA-256 hash of the unsigned payload (hex)"
+    },
+    "signature": {
+      "type": "string",
+      "description": "Optional Ed25519 signature of the unsigned payload (hex)"
+    },
+    "public_key": {
+      "type": "string",
+      "description": "Optional Ed25519 public key for signature verification (hex)"
+    }
+  }
+}

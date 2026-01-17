@@ -1,0 +1,12 @@
+{
+  "event": "state_change",
+  "pda": "11111111111111111111111111111111",
+  "dleq_verified": true,
+  "unlocked": false,
+  "expired": false,
+  "now_unix": 1710000000,
+  "lock_until": 1710003600,
+  "payload_hash": "95a9c30e852b77d181cc1b21c3a8906d9aabfd3a971aa468fc5dfbdc3db91424",
+  "signature": "19cab49a954a6edcb7a978958c03dc783d86075a8f66e2c11333121f3602c7940e58a2b465479cf0e0f4441036676b83583559b2d1baafaaa097468546f11908",
+  "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c"
+}
