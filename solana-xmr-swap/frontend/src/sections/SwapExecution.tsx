@@ -1,7 +1,10 @@
 import { useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
-import { PublicKey, Connection } from '@solana/web3.js'
+import { PublicKey, Connection, ComputeBudgetProgram } from '@solana/web3.js'
 import { demoSwap } from '../data/samples'
+import { DEFAULT_RPC_URL, RPC_OPTIONS } from '../config'
+import { verifyDleqClientSide } from '../lib/dleq'
+import { downloadJson } from '../lib/download'
 import {
   ATOMIC_LOCK_PROGRAM_ID,
 } from '../idl/atomic_lock'
@@ -33,10 +36,16 @@ type FormState = {
   challenge: string
   response: string
   secret: string
+  recipient: string
+}
+
+type StatusEntry = {
+  message: string
+  signature?: string
 }
 
 const initialForm: FormState = {
-  rpcUrl: 'http://127.0.0.1:8899',
+  rpcUrl: DEFAULT_RPC_URL,
   programId: ATOMIC_LOCK_PROGRAM_ID.toBase58(),
   tokenMint: '',
   amount: '',
@@ -50,12 +59,13 @@ const initialForm: FormState = {
   challenge: '',
   response: '',
   secret: '',
+  recipient: '',
 }
 
 export function SwapExecution() {
   const wallet = useWallet()
   const [form, setForm] = useState<FormState>(initialForm)
-  const [status, setStatus] = useState<string[]>([])
+  const [status, setStatus] = useState<StatusEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -105,8 +115,8 @@ export function SwapExecution() {
     setError(null)
   }
 
-  const pushStatus = (message: string) => {
-    setStatus((prev) => [message, ...prev].slice(0, 6))
+  const pushStatus = (message: string, signature?: string) => {
+    setStatus((prev) => [{ message, signature }, ...prev].slice(0, 6))
   }
 
   const execute = async (fn: () => Promise<void>) => {
@@ -120,6 +130,18 @@ export function SwapExecution() {
       setBusy(false)
     }
   }
+
+  const recipientInfo = useMemo(() => {
+    const trimmed = form.recipient.trim()
+    if (!trimmed) {
+      return { valid: true, key: wallet.publicKey ?? null }
+    }
+    try {
+      return { valid: true, key: new PublicKey(trimmed) }
+    } catch {
+      return { valid: false, key: null }
+    }
+  }, [form.recipient, wallet.publicKey])
 
   const initializeSwap = async () => {
     if (!wallet.publicKey) {
@@ -175,10 +197,11 @@ export function SwapExecution() {
         rent: RENT_SYSVAR,
       })
 
+    const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
     const signature = await builder
-      .preInstructions(ix ? [ix] : [])
+      .preInstructions(ix ? [computeIx, ix] : [computeIx])
       .rpc()
-    pushStatus(`Initialized swap: ${signature}`)
+    pushStatus('Initialized swap', signature)
   }
 
   const verifyDleq = async () => {
@@ -188,14 +211,32 @@ export function SwapExecution() {
     if (!programId || !derived.lock) {
       throw new Error('Missing PDA or program ID')
     }
+    const local = verifyDleqClientSide({
+      adaptorPoint: form.adaptorPoint,
+      secondPoint: form.secondPoint,
+      yPoint: form.yPoint,
+      r1: form.r1,
+      r2: form.r2,
+      challenge: form.challenge,
+      response: form.response,
+      hashlock: form.hashlock,
+    })
+    if (!local.ok) {
+      throw new Error(
+        `Local DLEQ verification failed (challengeMatches=${local.report.challengeMatches}, lhsR1Matches=${local.report.lhsR1Matches}, lhsR2Matches=${local.report.lhsR2Matches})`,
+      )
+    }
+    pushStatus('Local DLEQ verified')
     const program = getProgram(connection, wallet, programId)
+    const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
     const signature = await program.methods
       .verifyDleq()
       .accounts({
         atomicLock: derived.lock,
       })
+      .preInstructions([computeIx])
       .rpc()
-    pushStatus(`DLEQ verified: ${signature}`)
+    pushStatus('DLEQ verified', signature)
   }
 
   const unlockSwap = async () => {
@@ -208,14 +249,19 @@ export function SwapExecution() {
     const tokenMint = new PublicKey(form.tokenMint)
     const secret = parseHex32(form.secret)
     const program = getProgram(connection, wallet, programId)
+    if (!recipientInfo.valid || !recipientInfo.key) {
+      throw new Error('Recipient address is invalid')
+    }
+    const recipient = recipientInfo.key
 
     const { ata, ix } = await ensureAssociatedTokenAccount(
       connection,
       wallet.publicKey,
       tokenMint,
-      wallet.publicKey,
+      recipient,
     )
 
+    const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
     const signature = await program.methods
       .verifyAndUnlock(secret)
       .accounts({
@@ -225,9 +271,9 @@ export function SwapExecution() {
         unlockerToken: ata,
         tokenProgram: TOKEN_PROGRAM,
       })
-      .preInstructions(ix ? [ix] : [])
+      .preInstructions(ix ? [computeIx, ix] : [computeIx])
       .rpc()
-    pushStatus(`Unlocked swap: ${signature}`)
+    pushStatus('Unlocked swap', signature)
   }
 
   const refundSwap = async () => {
@@ -245,6 +291,7 @@ export function SwapExecution() {
       tokenMint,
       wallet.publicKey,
     )
+    const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
     const signature = await program.methods
       .refund()
       .accounts({
@@ -254,9 +301,85 @@ export function SwapExecution() {
         depositorToken: ata,
         tokenProgram: TOKEN_PROGRAM,
       })
-      .preInstructions(ix ? [ix] : [])
+      .preInstructions(ix ? [computeIx, ix] : [computeIx])
       .rpc()
-    pushStatus(`Refunded swap: ${signature}`)
+    pushStatus('Refunded swap', signature)
+  }
+
+  const buildAuditSnapshot = () => ({
+    timestamp: new Date().toISOString(),
+    rpcUrl: form.rpcUrl,
+    programId: form.programId,
+    lockPda: derived.lock?.toBase58() ?? null,
+    vaultPda: derived.vault?.toBase58() ?? null,
+    recipient: form.recipient.trim() || wallet.publicKey?.toBase58() || null,
+    form: {
+      tokenMint: form.tokenMint,
+      amount: form.amount,
+      lockUntil: form.lockUntil,
+      hashlock: form.hashlock,
+      adaptorPoint: form.adaptorPoint,
+      secondPoint: form.secondPoint,
+      yPoint: form.yPoint,
+      r1: form.r1,
+      r2: form.r2,
+      challenge: form.challenge,
+      response: form.response,
+    },
+    localDleq: (() => {
+      try {
+        return verifyDleqClientSide({
+          adaptorPoint: form.adaptorPoint,
+          secondPoint: form.secondPoint,
+          yPoint: form.yPoint,
+          r1: form.r1,
+          r2: form.r2,
+          challenge: form.challenge,
+          response: form.response,
+          hashlock: form.hashlock,
+        })
+      } catch (err) {
+        return {
+          ok: false,
+          report: {
+            computedChallenge: null,
+            challengeMatches: false,
+            lhsR1Matches: false,
+            lhsR2Matches: false,
+          },
+          error: err instanceof Error ? err.message : 'Unknown error',
+        }
+      }
+    })(),
+    status,
+  })
+
+  const exportAudit = () => {
+    downloadJson('swap-audit.json', buildAuditSnapshot())
+  }
+
+  const copyAudit = async () => {
+    const payload = JSON.stringify(buildAuditSnapshot(), null, 2)
+    if (!navigator.clipboard?.writeText) {
+      throw new Error('Clipboard API unavailable')
+    }
+    await navigator.clipboard.writeText(payload)
+    pushStatus('Audit JSON copied to clipboard')
+  }
+
+  const explorerCluster = useMemo(() => {
+    const url = form.rpcUrl.toLowerCase()
+    if (url.includes('devnet')) return 'devnet'
+    if (url.includes('testnet')) return 'testnet'
+    return 'mainnet-beta'
+  }, [form.rpcUrl])
+
+  const explorerUrl = (type: 'tx' | 'address', value: string) => {
+    const base =
+      type === 'tx'
+        ? `https://explorer.solana.com/tx/${value}`
+        : `https://explorer.solana.com/address/${value}`
+    return `${base}?cluster=${explorerCluster}`
   }
 
   return (
@@ -285,6 +408,19 @@ export function SwapExecution() {
 
       <div className="grid two">
         <label>
+          RPC Provider
+          <select
+            value={form.rpcUrl}
+            onChange={(event) => update('rpcUrl', event.target.value)}
+          >
+            {RPC_OPTIONS.map((option) => (
+              <option key={option.label} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <label>
           RPC URL
           <input
             value={form.rpcUrl}
@@ -297,6 +433,16 @@ export function SwapExecution() {
             value={form.programId}
             onChange={(event) => update('programId', event.target.value)}
           />
+          {programId && (
+            <a
+              className="muted"
+              href={explorerUrl('address', programId.toBase58())}
+              target="_blank"
+              rel="noreferrer"
+            >
+              View program
+            </a>
+          )}
         </label>
         <label>
           Token mint
@@ -394,6 +540,17 @@ export function SwapExecution() {
           />
         </label>
         <label>
+          Recipient (unlock destination)
+          <input
+            value={form.recipient}
+            onChange={(event) => update('recipient', event.target.value)}
+            placeholder="Defaults to connected wallet"
+          />
+          {!recipientInfo.valid && form.recipient.trim() && (
+            <span className="muted">Invalid recipient address</span>
+          )}
+        </label>
+        <label>
           Derived Lock PDA
           <input value={derived.lock?.toBase58() ?? ''} readOnly />
         </label>
@@ -416,6 +573,12 @@ export function SwapExecution() {
         <button className="ghost" disabled={busy} onClick={() => execute(refundSwap)}>
           Refund
         </button>
+        <button className="ghost" disabled={busy} onClick={exportAudit}>
+          Export Audit
+        </button>
+        <button className="ghost" disabled={busy} onClick={() => execute(copyAudit)}>
+          Copy Audit JSON
+        </button>
       </div>
 
       {error && <div className="alert error">{error}</div>}
@@ -426,8 +589,23 @@ export function SwapExecution() {
             <span>Recent Activity</span>
           </div>
           <ul className="status-list">
-            {status.map((entry) => (
-              <li key={entry}>{entry}</li>
+            {status.map((entry, idx) => (
+              <li key={`${entry.message}-${idx}`}>
+                {entry.message}
+                {entry.signature ? (
+                  <>
+                    {' '}
+                    <a
+                      className="muted"
+                      href={explorerUrl('tx', entry.signature)}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View tx
+                    </a>
+                  </>
+                ) : null}
+              </li>
             ))}
           </ul>
         </div>

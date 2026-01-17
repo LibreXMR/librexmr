@@ -7,7 +7,6 @@ import {
 import { WalletProvider } from '@solana/wallet-adapter-react'
 import { WalletModalProvider } from '@solana/wallet-adapter-react-ui'
 import {
-  BackpackWalletAdapter,
   PhantomWalletAdapter,
   SolflareWalletAdapter,
 } from '@solana/wallet-adapter-wallets'
@@ -22,7 +21,6 @@ function AppProviders() {
     () => [
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter({ network }),
-      new BackpackWalletAdapter(),
     ],
     [network],
   )
