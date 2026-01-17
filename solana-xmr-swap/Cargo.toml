@@ -1,0 +1,12 @@
+ [workspace]
+ members = [
+     "programs/atomic_lock",
+    "tools/dleq_verifier",
+    "tools/swap_ops",
+    "tools/swap_sdk",
+    "tools/swap_coordinator",
+ ]
+resolver = "2"
+
+[patch.crates-io]
+curve25519-dalek = { path = "vendor/curve25519-dalek" }
