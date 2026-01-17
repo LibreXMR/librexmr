@@ -1,0 +1,20 @@
+{
+  "name": "dleq-verifier-ts",
+  "version": "0.1.0",
+  "private": true,
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "verify": "node dist/index.js --input ../../test_vectors/dleq.json --verbose",
+    "check": "npm run build",
+    "test": "npm run verify"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "MIT",
+  "description": "Minimal TS wrapper for DLEQ verifier CLI",
+  "devDependencies": {
+    "@types/node": "^25.0.8",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "adaptor_point_compressed": "253d3c600297c9d049fca09a284738a9c8839051b3fab91a5b7bf5a551be3cf4",
+  "challenge": "1c9bb910f1aefb55ce8379ff42e8e3c030646d69574b48143f883c871f548f0b",
+  "dleq_second_point_compressed": "5d4d443ec3dd651b6f8de0f953e103a4a5d7ddd390952250694d99734d9aca6b",
+  "hashlock": "efd6fd6ffd37ef49e63fe7bff860dba068ef5f7e9e76e0b7aae7d6694839d420",
+  "r1_compressed": "3468df404ef63c188fa10e53e959500afe700c3567c544663c7670bf7326915a",
+  "r2_compressed": "03fedd2d8ae19d915007b5ba21c4e67f5181da2e6c2aa59953a2993bbaf2ac36",
+  "response": "61a60f4d24d7cf19585d49aa4e3d00d9f2ceb61d5745c24e6efb3ab9fa9c370e",
+  "y_compressed": "a833215ca65eb659f52be7d69c6797f0f753598b1af3c42f6dcab035919df6b7",
+  "secret": "7496f601de5dbd08c0f65d6927c4570f34a205c37bd98aa8ad83a91241937a0a"
+}
