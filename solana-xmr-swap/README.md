@@ -19,7 +19,24 @@ verify it off-chain before calling `verify_dleq`. See `SECURITY.md` for details.
 - End-to-end demo guide: `docs/DEMO.md`
 - Production roadmap: `docs/PRODUCTION.md`
 - Hardening checklist: `docs/HARDENING.md`
+- Stagenet runbook: `docs/STAGENET_RUNBOOK.md`
 - Audited libraries: `docs/AUDITED_LIBRARIES.md`
+
+## RPC Provider
+This project uses [Helius](https://helius.dev) for reliable Solana RPC access.
+Set `VITE_HELIUS_RPC` in your frontend environment (do not commit API keys).
+See `docs/ENV_EXAMPLE.md` for a safe template.
+
+### Helius Bounty Notes
+- We route all Solana RPC traffic through Helius when `VITE_HELIUS_RPC` is set.
+- Keep API keys in `.env` only (never commit).
+- Optional: priority fee estimates are fetched via Helius when enabled.
+- You can set `VITE_HELIUS_PRIORITY_RPC_URL` to use mainnet for fee estimates.
+- Enhanced Transactions (history panel) requires `VITE_HELIUS_API_KEY`.
+
+### QuickNode Notes
+- Optional alternative RPC via `VITE_QUICKNODE_RPC`.
+- Use the RPC dropdown in the UI to switch providers.
 
 ## DLEQ Test Vector
 A canonical DLEQ test vector (from the Starknet swap implementation) is stored at
@@ -134,6 +151,35 @@ Run tests:
 ```
 npm test
 ```
+
+### Deploy Frontend (Render)
+Render works well for static Vite builds:
+```
+cd frontend
+npm run build
+```
+Render settings:
+- Build command: `cd frontend && npm ci && npm run build`
+- Publish directory: `frontend/dist`
+- Env vars: `VITE_HELIUS_RPC`, `VITE_RPC_URL`, `VITE_HELIUS_API_KEY`, `VITE_QUICKNODE_RPC`
+
+### Compliance (Range)
+Optional compliance screening before swaps (dev mode skips without a key):
+- `VITE_RANGE_API_KEY`
+- `VITE_RANGE_API_URL` (default `https://api.range.org`)
+- `VITE_RANGE_FAIL_CLOSED` (set `true` to block swaps without a key)
+- UI toggle in Swap Execution can disable checks for demos.
+
+## Sponsor Integrations
+| Sponsor | Integration | Status |
+|---------|-------------|--------|
+| [Helius](https://helius.dev) | Primary RPC, Priority Fees, Enhanced Tx | ✅ |
+| [QuickNode](https://quicknode.com) | Alternative RPC | ✅ |
+| [Range Protocol](https://range.org) | Compliance screening (optional) | ✅ |
+| [SilentSwap](https://silentswap.com) | Cross-chain privacy architecture | ✅ |
+
+### Stagenet Demo (Real XMR)
+For a real Monero stagenet claim demo, follow `docs/STAGENET_RUNBOOK.md`.
 
 ## Demo Swap Vector
 Generate a fresh demo vector (includes secret) for the UI:

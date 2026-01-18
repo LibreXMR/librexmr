@@ -8,6 +8,8 @@ Monero claim. It uses the prebuilt DLEQ demo vector.
 - [ ] Localnet started and program deployed
 - [ ] Demo swap initialized and unlocked via `swap_coordinator`
 - [ ] Client-side DLEQ verification completed in UI
+- [ ] Helius RPC set via `VITE_HELIUS_RPC` for devnet
+- [ ] Helius API key set via `VITE_HELIUS_API_KEY` (tx history panel)
 - [ ] XMR simulator claim completed with the revealed secret
 - [ ] Audit log or alert verification shown
 - [ ] Short demo video recorded
@@ -32,6 +34,10 @@ Monero claim. It uses the prebuilt DLEQ demo vector.
 **Step 4 — Monero claim (simulated) (30s)**
 - Run `xmr_simulator` lock + claim with the same secret.
 - Show the simulated claim txid.
+
+**Step 4b — Monero claim (stagenet, optional)**
+- Run the real `claim-xmr` flow from `docs/STAGENET_RUNBOOK.md`.
+- Emphasize this is a real stagenet tx (not a simulator).
 
 **Step 5 — Auditability (20s)**
 - Verify a signed alert or audit log with CLI.
@@ -87,6 +93,19 @@ cargo run -p xmr_simulator -- claim \
 ```
 
 The simulator validates the hashlock and prints a fake claim txid.
+
+## 5b) Real Monero claim (stagenet, optional)
+
+Follow `docs/STAGENET_RUNBOOK.md` for a real stagenet claim. Use real
+adaptor partials from the swap negotiation (do not use placeholder zeros
+outside simulator demos).
+
+## 7) Deploy the frontend (optional)
+
+Render settings:
+- Build command: `cd frontend && npm ci && npm run build`
+- Publish directory: `frontend/dist`
+- Env vars: `VITE_HELIUS_RPC`, `VITE_RPC_URL`, `VITE_HELIUS_API_KEY`
 
 ## 6) Frontend demo (optional)
 

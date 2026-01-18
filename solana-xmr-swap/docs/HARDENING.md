@@ -6,6 +6,7 @@ validated with tests. All changes follow TDD.
 ## Monero RPC Integration (TDD)
 - [x] RPC wrapper methods in `tools/xmr_wallet`
 - [x] Ignored RPC integration tests (`tests/rpc.rs`)
+- [x] Watcher RPC integration test (`tests/watcher_rpc.rs`)
 - [ ] Run RPC integration tests in a staging environment
 
 Run the RPC tests locally:
@@ -23,14 +24,27 @@ make test-rpc
 - [x] Tests for rollback on reorg detection.
 
 ## Claim Flow Hardening
-- [ ] Implement adaptor completion path and validate with unit tests.
-- [ ] Import derived spend key via RPC and sweep funds.
-- [ ] Negative tests for wrong secret or replay.
+- [x] Implement adaptor completion path and validate with unit tests.
+- [x] Import derived spend key via RPC and sweep funds.
+- [x] Negative tests for wrong secret or replay.
 
 ## Operational Hardening
-- [ ] RPC timeouts and retry backoff.
+- [x] RPC timeouts, retry backoff, and jitter.
+  - Implement per-call timeout + max retry budget in `tools/xmr_wallet`.
+  - Add unit tests for retry count, backoff growth, and timeout handling.
 - [x] Structured logs without secrets.
-- [ ] Metrics hooks for swap state transitions.
+
+## Helius Integration
+- [x] Document Helius usage in README and demo checklist.
+- [x] Add optional Priority Fees API integration.
+- [x] Add RPC fallback for priority fees (getRecentPrioritizationFees).
+- [x] Add Helius transaction polling with timeouts and safe limits.
+
+## Stagenet Runbook
+- [x] Documented end-to-end stagenet runbook (`docs/STAGENET_RUNBOOK.md`).
+- [x] Metrics hooks for swap state transitions.
+  - Emit counters + latency timers at each transition (init, lock seen, claim, refund).
+  - Add a lightweight metrics adapter (stdout/Prometheus) with unit tests.
 
 ## Security Review Hooks
 - [ ] Static audit checklist run before releases.

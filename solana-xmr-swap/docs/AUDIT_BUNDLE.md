@@ -15,6 +15,7 @@ This file enumerates the materials needed for a focused audit review.
 - `docs/ALERT_SCHEMA.json`
 - `docs/WEBHOOK_VERIFICATION.md`
 - `docs/AUDITED_LIBRARIES.md`
+- `docs/STAGENET_RUNBOOK.md`
 - `docs/alert_signed_sample.json`
 - `docs/audit_signed_sample.json`
 
