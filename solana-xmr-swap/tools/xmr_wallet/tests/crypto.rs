@@ -1,7 +1,8 @@
 use curve25519_dalek::edwards::EdwardsPoint;
 use curve25519_dalek::scalar::Scalar;
 use curve25519_dalek::traits::Identity;
-use xmr_wallet::{complete_adaptor, derive_spend_key, validate_point};
+use monero::cryptonote::hash::Hash;
+use xmr_wallet::{complete_adaptor, derive_spend_key, derive_view_key, validate_point, SecretKey};
 
 #[test]
 fn completes_adaptor_signature() {
@@ -35,4 +36,12 @@ fn rejects_invalid_point_encoding() {
     invalid[31] = 0x7f;
     let result = validate_point(&invalid);
     assert!(result.is_err());
+}
+
+#[test]
+fn derives_view_key_with_keccak_hash() {
+    let spend = SecretKey::from_scalar(Scalar::from(9u64));
+    let derived = derive_view_key(&spend).expect("derive view key");
+    let expected = Hash::hash_to_scalar(spend.to_bytes());
+    assert_eq!(derived.to_bytes(), expected.to_bytes());
 }

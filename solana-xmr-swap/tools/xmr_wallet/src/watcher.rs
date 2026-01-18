@@ -1,4 +1,8 @@
+use monero_rpc::TransferHeight;
 use tracing::{debug, warn};
+
+use crate::rpc::XmrWallet;
+use crate::types::Result;
 
 #[derive(Debug, Clone, Copy)]
 pub struct WatcherConfig {
@@ -33,6 +37,7 @@ impl WatcherState {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WatcherEvent {
     NoLockObserved,
+    LockInPool { amount: u64 },
     AwaitingConfirmations {
         observed_height: u64,
         current_height: u64,
@@ -114,5 +119,38 @@ impl LockWatcher {
 
     pub fn state(&self) -> WatcherState {
         self.state
+    }
+
+    pub async fn poll_for_lock(
+        &mut self,
+        wallet: &XmrWallet,
+        expected_amount: u64,
+    ) -> Result<Option<WatcherEvent>> {
+        let current_height = wallet.get_height().await?;
+        if let Some(event) = self.update_height(current_height) {
+            return Ok(Some(event));
+        }
+
+        wallet.refresh(self.state.last_seen_height).await?;
+        let transfers = wallet.get_incoming_transfers().await?;
+        for transfer in transfers {
+            let amount = transfer.amount.as_pico();
+            if amount < expected_amount {
+                continue;
+            }
+            match transfer.height {
+                TransferHeight::InPool => {
+                    debug!(amount, "Observed lock transfer in pool");
+                    return Ok(Some(WatcherEvent::LockInPool { amount }));
+                }
+                TransferHeight::Confirmed(height) => {
+                    let observed_height = height.get();
+                    self.observe_lock(observed_height);
+                    return Ok(Some(self.evaluate(current_height)));
+                }
+            }
+        }
+
+        Ok(None)
     }
 }

@@ -8233,7 +8233,9 @@ dependencies = [
  "async-trait",
  "atomic_lock",
  "clap",
+ "curve25519-dalek 4.1.3",
  "dleq_verifier",
+ "monero 0.21.0",
  "rand 0.8.5",
  "serde",
  "serde_json",
@@ -8244,6 +8246,7 @@ dependencies = [
  "spl-associated-token-account",
  "spl-token",
  "tokio",
+ "xmr_wallet",
 ]
 
 [[package]]

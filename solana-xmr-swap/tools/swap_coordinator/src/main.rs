@@ -1,7 +1,9 @@
 mod db;
 mod driver;
 mod solana;
+mod metrics;
 mod state;
+pub mod xmr;
 
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -23,11 +25,14 @@ use spl_associated_token_account::instruction::create_associated_token_account;
 use spl_token::instruction as token_instruction;
 
 use dleq_verifier::{verify_dleq, DleqVector};
+use xmr_wallet::XmrWallet;
 
 use crate::db::{JsonFileDb, SwapDb};
 use crate::driver::step;
+use crate::metrics::NoopMetrics;
 use crate::solana::SolanaSwapClient;
 use crate::state::SwapState;
+use crate::xmr::{claim_xmr, parse_network, XmrClaimRequest};
 
 #[derive(Parser)]
 #[command(name = "swap-coordinator", version, about = "Swap orchestration CLI")]
@@ -42,6 +47,8 @@ enum Command {
     Demo(DemoArgs),
     /// Create a new mint and fund the depositor
     SetupMint(SetupMintArgs),
+    /// Claim XMR using the revealed secret
+    ClaimXmr(ClaimXmrArgs),
 }
 
 #[derive(Parser)]
@@ -94,6 +101,34 @@ struct SetupMintArgs {
     decimals: u8,
 }
 
+#[derive(Parser)]
+struct ClaimXmrArgs {
+    /// Monero wallet RPC URL
+    #[arg(long, default_value = "http://127.0.0.1:18083")]
+    rpc: String,
+    /// Network: mainnet | testnet | stagenet
+    #[arg(long, default_value = "stagenet")]
+    network: String,
+    /// Wallet filename to create for claim
+    #[arg(long, default_value = "claim_wallet")]
+    wallet: String,
+    /// Destination address to sweep funds to
+    #[arg(long)]
+    destination: String,
+    /// Alice partial secret (hex)
+    #[arg(long)]
+    alice_partial: String,
+    /// Bob partial secret (hex)
+    #[arg(long)]
+    bob_partial: String,
+    /// Revealed secret from Solana (hex)
+    #[arg(long)]
+    secret: String,
+    /// Optional restore height
+    #[arg(long)]
+    restore_height: Option<u64>,
+}
+
 #[derive(Deserialize)]
 struct DemoVector {
     secret: String,
@@ -107,6 +142,7 @@ async fn main() -> Result<()> {
     match cli.command {
         Command::Demo(args) => run_demo(args).await,
         Command::SetupMint(args) => run_setup_mint(args),
+        Command::ClaimXmr(args) => run_claim_xmr(args).await,
     }
 }
 
@@ -168,6 +204,7 @@ async fn run_demo(args: DemoArgs) -> Result<()> {
 
     let mut current = state;
     let secret = decode_hex_32(&demo.secret)?;
+    let metrics = NoopMetrics::default();
 
     let client = SolanaSwapClient::new(
         &args.rpc,
@@ -195,7 +232,7 @@ async fn run_demo(args: DemoArgs) -> Result<()> {
         if current.is_terminal() {
             break;
         }
-        match step(&current, &db, &client, Some(secret)).await? {
+        match step(&current, &db, &client, &metrics, Some(secret)).await? {
             Some(next) => {
                 println!("state -> {:?}", next);
                 current = next;
@@ -213,6 +250,23 @@ fn run_setup_mint(args: SetupMintArgs) -> Result<()> {
     let rpc = RpcClient::new_with_commitment(args.rpc.clone(), CommitmentConfig::confirmed());
     let mint = create_mint_and_fund(&rpc, &depositor, args.amount, args.decimals)?;
     println!("mint: {mint}");
+    Ok(())
+}
+
+async fn run_claim_xmr(args: ClaimXmrArgs) -> Result<()> {
+    let network = parse_network(&args.network)?;
+    let wallet = XmrWallet::connect(&args.rpc).await?;
+    let request = XmrClaimRequest {
+        alice_partial: decode_hex_32(&args.alice_partial)?,
+        bob_partial: decode_hex_32(&args.bob_partial)?,
+        revealed_secret: decode_hex_32(&args.secret)?,
+        destination_address: args.destination,
+        wallet_filename: args.wallet,
+        network,
+        restore_height: args.restore_height,
+    };
+    let tx_hash = claim_xmr(&wallet, &request).await?;
+    println!("xmr_claim_tx: {tx_hash}");
     Ok(())
 }
 

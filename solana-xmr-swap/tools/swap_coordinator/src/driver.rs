@@ -7,6 +7,9 @@ use anyhow::{anyhow, Result};
 use async_trait::async_trait;
 
 use crate::db::SwapDb;
+use std::time::Instant;
+
+use crate::metrics::SwapMetrics;
 use crate::state::SwapState;
 
 #[async_trait]
@@ -18,28 +21,33 @@ pub trait SolanaClient: Send + Sync {
     async fn get_block_timestamp(&self) -> Result<i64>;
 }
 
-pub async fn step<D, S>(
+pub async fn step<D, S, M>(
     state: &SwapState,
     db: &D,
     client: &S,
+    metrics: &M,
     secret: Option<[u8; 32]>,
 ) -> Result<Option<SwapState>>
 where
     D: SwapDb,
     S: SolanaClient,
+    M: SwapMetrics,
 {
     if let Some(lock_until) = get_lock_until(state) {
         let now = client.get_block_timestamp().await?;
         if now >= lock_until && can_refund(state) {
-            let new_state = handle_refund(state, client).await?;
+            let new_state = handle_refund(state, client, metrics).await?;
             db.save(&new_state)?;
+            metrics.record_transition(state, &new_state);
             return Ok(Some(new_state));
         }
     }
 
     let new_state = match state {
         SwapState::Created { swap_id, lock_duration_secs, .. } => {
+            let started = Instant::now();
             let (lock_pda, vault, lock_until, sig) = client.initialize(*lock_duration_secs).await?;
+            metrics.record_latency("initialize", started.elapsed());
             SwapState::Initialized {
                 swap_id: swap_id.clone(),
                 lock_pda,
@@ -51,7 +59,9 @@ where
             }
         }
         SwapState::Initialized { swap_id, lock_pda, vault, lock_until, .. } => {
+            let started = Instant::now();
             let sig = client.verify_dleq(lock_pda).await?;
+            metrics.record_latency("verify_dleq", started.elapsed());
             SwapState::DleqVerified {
                 swap_id: swap_id.clone(),
                 lock_pda: lock_pda.clone(),
@@ -64,7 +74,9 @@ where
         }
         SwapState::DleqVerified { swap_id, lock_pda, vault, .. } => {
             let secret = secret.ok_or_else(|| anyhow!("secret required to unlock"))?;
+            let started = Instant::now();
             let sig = client.unlock(lock_pda, vault, secret).await?;
+            metrics.record_latency("unlock", started.elapsed());
             SwapState::Unlocked {
                 swap_id: swap_id.clone(),
                 unlock_tx: sig,
@@ -76,6 +88,7 @@ where
     };
 
     db.save(&new_state)?;
+    metrics.record_transition(state, &new_state);
     Ok(Some(new_state))
 }
 
@@ -91,7 +104,11 @@ fn can_refund(state: &SwapState) -> bool {
     matches!(state, SwapState::Initialized { .. } | SwapState::DleqVerified { .. })
 }
 
-async fn handle_refund<S: SolanaClient>(state: &SwapState, client: &S) -> Result<SwapState> {
+async fn handle_refund<S: SolanaClient, M: SwapMetrics>(
+    state: &SwapState,
+    client: &S,
+    metrics: &M,
+) -> Result<SwapState> {
     let (swap_id, lock_pda, vault) = match state {
         SwapState::Initialized { swap_id, lock_pda, vault, .. }
         | SwapState::DleqVerified { swap_id, lock_pda, vault, .. } => {
@@ -100,7 +117,9 @@ async fn handle_refund<S: SolanaClient>(state: &SwapState, client: &S) -> Result
         _ => return Err(anyhow!("Cannot refund from state: {:?}", state)),
     };
 
+    let started = Instant::now();
     let refund_tx = client.refund(&lock_pda, &vault).await?;
+    metrics.record_latency("refund", started.elapsed());
     Ok(SwapState::Refunded {
         swap_id,
         reason: "Timeout exceeded".to_string(),
