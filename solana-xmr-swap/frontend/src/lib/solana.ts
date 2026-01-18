@@ -1,4 +1,4 @@
-import { AnchorProvider, BN, Program } from '@coral-xyz/anchor'
+import { AnchorProvider, BN, Program, type Idl } from '@coral-xyz/anchor'
 import { type WalletContextState } from '@solana/wallet-adapter-react'
 import {
   Connection,
@@ -28,8 +28,9 @@ export function getProgram(
   const provider = new AnchorProvider(connection, wallet as never, {
     preflightCommitment: 'confirmed',
   })
-  const id = programId ?? ATOMIC_LOCK_PROGRAM_ID
-  return new Program(ATOMIC_LOCK_IDL, id, provider)
+  const address = (programId ?? ATOMIC_LOCK_PROGRAM_ID).toBase58()
+  const idl = { ...ATOMIC_LOCK_IDL, address } as Idl
+  return new Program(idl, provider)
 }
 
 export function parseHex32(value: string): Uint8Array {

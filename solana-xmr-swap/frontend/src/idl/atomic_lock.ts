@@ -92,4 +92,4 @@ export const ATOMIC_LOCK_IDL = {
       },
     },
   ],
-} as const satisfies Idl
+} as unknown as Idl
