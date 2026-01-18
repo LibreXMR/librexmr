@@ -17,4 +17,5 @@ VITE_HELIUS_PRIORITY_RPC_URL=https://mainnet.helius-rpc.com/?api-key=YOUR_HELIUS
 VITE_RANGE_API_KEY=YOUR_RANGE_API_KEY
 VITE_RANGE_API_URL=https://api.range.org
 VITE_RANGE_FAIL_CLOSED=false
+VITE_DEBUG_LOGS=false
 ```
