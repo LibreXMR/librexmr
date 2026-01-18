@@ -1,10 +1,16 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey, Connection, ComputeBudgetProgram } from '@solana/web3.js'
 import { demoSwap } from '../data/samples'
 import { DEFAULT_RPC_URL, RPC_OPTIONS } from '../config'
 import { verifyDleqClientSide } from '../lib/dleq'
 import { downloadJson } from '../lib/download'
+import {
+  fetchHeliusTransactions,
+  isHeliusEnabled,
+  type HeliusTransaction,
+} from '../lib/helius'
+import { screenSwapParties } from '../lib/compliance'
 import {
   ATOMIC_LOCK_PROGRAM_ID,
 } from '../idl/atomic_lock'
@@ -15,6 +21,7 @@ import {
   deriveLockPda,
   deriveVaultPda,
   ensureAssociatedTokenAccount,
+  fetchPriorityFeeEstimate,
   getProgram,
   parseHex32,
   parseI64,
@@ -68,6 +75,12 @@ export function SwapExecution() {
   const [status, setStatus] = useState<StatusEntry[]>([])
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [heliusTxs, setHeliusTxs] = useState<HeliusTransaction[]>([])
+  const [heliusError, setHeliusError] = useState<string | null>(null)
+  const [complianceEnabled, setComplianceEnabled] = useState(true)
+  const [complianceStatus, setComplianceStatus] = useState<
+    'idle' | 'checking' | 'pass' | 'fail' | 'skipped'
+  >('idle')
 
   const update = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -119,6 +132,59 @@ export function SwapExecution() {
     setStatus((prev) => [{ message, signature }, ...prev].slice(0, 6))
   }
 
+  const buildPriorityFeeIx = async (accountKeys: PublicKey[]) => {
+    const { estimate, source } = await fetchPriorityFeeEstimate(
+      form.rpcUrl,
+      accountKeys,
+      connection,
+    )
+    if (!estimate || estimate <= 0) {
+      return null
+    }
+    const sourceLabel = source === 'helius' ? 'Helius' : 'RPC fallback'
+    pushStatus(
+      `Priority fee estimate (${sourceLabel}): ${Math.round(estimate)} μ-lamports/CU`,
+    )
+    return ComputeBudgetProgram.setComputeUnitPrice({
+      microLamports: Math.ceil(estimate),
+    })
+  }
+
+  useEffect(() => {
+    if (!derived.lock || !isHeliusEnabled(form.rpcUrl)) {
+      setHeliusTxs([])
+      setHeliusError(null)
+      return
+    }
+    let cancelled = false
+    const pollMs = Number(import.meta.env.VITE_HELIUS_TX_POLL_MS ?? 15000)
+    const poll = async () => {
+      try {
+        const txs = await fetchHeliusTransactions(
+          form.rpcUrl,
+          derived.lock.toBase58(),
+          10,
+        )
+        if (!cancelled) {
+          setHeliusTxs(txs)
+          setHeliusError(null)
+        }
+      } catch (err) {
+        if (!cancelled) {
+          setHeliusError(
+            err instanceof Error ? err.message : 'Failed to load Helius history',
+          )
+        }
+      }
+    }
+    poll()
+    const interval = window.setInterval(poll, pollMs)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [derived.lock, form.rpcUrl])
+
   const execute = async (fn: () => Promise<void>) => {
     setError(null)
     setBusy(true)
@@ -149,6 +215,37 @@ export function SwapExecution() {
     }
     if (!programId) {
       throw new Error('Invalid program ID')
+    }
+    if (form.recipient.trim() && !recipientInfo.valid) {
+      throw new Error('Invalid recipient address')
+    }
+
+    if (complianceEnabled) {
+      setComplianceStatus('checking')
+      try {
+        const compliance = await screenSwapParties(
+          wallet.publicKey.toBase58(),
+          recipientInfo.key?.toBase58(),
+        )
+        const failed =
+          !compliance.depositor.isClean ||
+          (compliance.recipient && !compliance.recipient.isClean)
+        const skipped =
+          compliance.depositor.source === 'skipped' &&
+          (!compliance.recipient || compliance.recipient.source === 'skipped')
+        if (failed) {
+          setComplianceStatus('fail')
+          throw new Error('Compliance screening failed')
+        }
+        setComplianceStatus(skipped ? 'skipped' : 'pass')
+      } catch (err) {
+        if (err instanceof Error && err.message === 'Compliance screening failed') {
+          throw err
+        }
+        setComplianceStatus('skipped')
+      }
+    } else {
+      setComplianceStatus('skipped')
     }
     const tokenMint = new PublicKey(form.tokenMint)
     const hashlock = parseHex32(form.hashlock)
@@ -198,8 +295,19 @@ export function SwapExecution() {
       })
 
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+    const priorityIx = await buildPriorityFeeIx([
+      wallet.publicKey,
+      lockPda,
+      vaultPda,
+      tokenMint,
+      programId,
+    ])
     const signature = await builder
-      .preInstructions(ix ? [computeIx, ix] : [computeIx])
+      .preInstructions(
+        ix
+          ? [computeIx, ...(priorityIx ? [priorityIx] : []), ix]
+          : [computeIx, ...(priorityIx ? [priorityIx] : [])],
+      )
       .rpc()
     pushStatus('Initialized swap', signature)
   }
@@ -229,12 +337,17 @@ export function SwapExecution() {
     pushStatus('Local DLEQ verified')
     const program = getProgram(connection, wallet, programId)
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+    const priorityIx = await buildPriorityFeeIx([
+      wallet.publicKey,
+      derived.lock,
+      programId,
+    ])
     const signature = await program.methods
       .verifyDleq()
       .accounts({
         atomicLock: derived.lock,
       })
-      .preInstructions([computeIx])
+      .preInstructions([computeIx, ...(priorityIx ? [priorityIx] : [])])
       .rpc()
     pushStatus('DLEQ verified', signature)
   }
@@ -262,6 +375,14 @@ export function SwapExecution() {
     )
 
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+    const priorityIx = await buildPriorityFeeIx([
+      wallet.publicKey,
+      derived.lock,
+      derived.vault,
+      tokenMint,
+      recipient,
+      programId,
+    ])
     const signature = await program.methods
       .verifyAndUnlock(secret)
       .accounts({
@@ -271,7 +392,11 @@ export function SwapExecution() {
         unlockerToken: ata,
         tokenProgram: TOKEN_PROGRAM,
       })
-      .preInstructions(ix ? [computeIx, ix] : [computeIx])
+      .preInstructions(
+        ix
+          ? [computeIx, ...(priorityIx ? [priorityIx] : []), ix]
+          : [computeIx, ...(priorityIx ? [priorityIx] : [])],
+      )
       .rpc()
     pushStatus('Unlocked swap', signature)
   }
@@ -292,6 +417,13 @@ export function SwapExecution() {
       wallet.publicKey,
     )
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
+    const priorityIx = await buildPriorityFeeIx([
+      wallet.publicKey,
+      derived.lock,
+      derived.vault,
+      tokenMint,
+      programId,
+    ])
     const signature = await program.methods
       .refund()
       .accounts({
@@ -301,7 +433,11 @@ export function SwapExecution() {
         depositorToken: ata,
         tokenProgram: TOKEN_PROGRAM,
       })
-      .preInstructions(ix ? [computeIx, ix] : [computeIx])
+      .preInstructions(
+        ix
+          ? [computeIx, ...(priorityIx ? [priorityIx] : []), ix]
+          : [computeIx, ...(priorityIx ? [priorityIx] : [])],
+      )
       .rpc()
     pushStatus('Refunded swap', signature)
   }
@@ -373,6 +509,11 @@ export function SwapExecution() {
     if (url.includes('testnet')) return 'testnet'
     return 'mainnet-beta'
   }, [form.rpcUrl])
+
+  const heliusEnabled = useMemo(
+    () => isHeliusEnabled(form.rpcUrl),
+    [form.rpcUrl],
+  )
 
   const explorerUrl = (type: 'tx' | 'address', value: string) => {
     const base =
@@ -551,6 +692,20 @@ export function SwapExecution() {
           )}
         </label>
         <label>
+          Compliance checks
+          <input
+            type="checkbox"
+            checked={complianceEnabled}
+            onChange={(event) => {
+              setComplianceEnabled(event.target.checked)
+              setComplianceStatus('idle')
+            }}
+          />
+          <span className="muted">
+            Toggle Range screening for demos.
+          </span>
+        </label>
+        <label>
           Derived Lock PDA
           <input value={derived.lock?.toBase58() ?? ''} readOnly />
         </label>
@@ -583,6 +738,15 @@ export function SwapExecution() {
 
       {error && <div className="alert error">{error}</div>}
 
+      {complianceStatus !== 'idle' && (
+        <div className="alert info">
+          {complianceStatus === 'checking' && 'Compliance: checking...'}
+          {complianceStatus === 'pass' && 'Compliance: passed'}
+          {complianceStatus === 'skipped' && 'Compliance: skipped (no API key)'}
+          {complianceStatus === 'fail' && 'Compliance: failed'}
+        </div>
+      )}
+
       {status.length > 0 && (
         <div className="output">
           <div className="output-header">
@@ -610,6 +774,50 @@ export function SwapExecution() {
           </ul>
         </div>
       )}
+
+      <div className="output">
+        <div className="output-header">
+          <span>Helius Activity (Lock PDA)</span>
+        </div>
+        {!heliusEnabled && (
+          <div className="muted">
+            Helius API key not configured. Add `VITE_HELIUS_API_KEY` or use a
+            Helius RPC URL with `api-key`.
+          </div>
+        )}
+        {heliusEnabled && heliusError && (
+          <div className="alert error">{heliusError}</div>
+        )}
+        {heliusEnabled && !heliusError && heliusTxs.length === 0 && (
+          <div className="muted">No Helius history yet.</div>
+        )}
+        {heliusEnabled && heliusTxs.length > 0 && (
+          <ul className="status-list">
+            {heliusTxs.map((tx) => (
+              <li key={tx.signature}>
+                {tx.type ?? 'Transaction'} · {tx.source ?? 'Helius'}{' '}
+                <a
+                  className="muted"
+                  href={explorerUrl('tx', tx.signature)}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  View tx
+                </a>
+                {tx.timestamp && (
+                  <span className="muted">
+                    {' '}
+                    {new Date(tx.timestamp * 1000).toLocaleString()}
+                  </span>
+                )}
+                {tx.description ? (
+                  <div className="muted">{tx.description}</div>
+                ) : null}
+              </li>
+            ))}
+          </ul>
+        )}
+      </div>
     </div>
   )
 }

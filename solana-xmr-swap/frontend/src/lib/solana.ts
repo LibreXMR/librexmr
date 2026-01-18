@@ -92,6 +92,77 @@ export async function ensureAssociatedTokenAccount(
   return { ata, ix }
 }
 
+export async function fetchPriorityFeeEstimate(
+  rpcUrl: string,
+  accountKeys: PublicKey[],
+  connection?: Connection,
+): Promise<{ estimate: number | null; source: 'helius' | 'fallback' | null }> {
+  const priorityLevel =
+    (import.meta.env.VITE_HELIUS_PRIORITY_LEVEL as string | undefined) ??
+    'Medium'
+  const priorityRpcUrl =
+    (import.meta.env.VITE_HELIUS_PRIORITY_RPC_URL as string | undefined) ??
+    rpcUrl
+  const isHelius = priorityRpcUrl.toLowerCase().includes('helius')
+
+  const payload = {
+    jsonrpc: '2.0',
+    id: 'priority-fee',
+    method: 'getPriorityFeeEstimate',
+    params: [
+      {
+        accountKeys: accountKeys.map((key) => key.toBase58()),
+        options: {
+          priorityLevel,
+          recommended: true,
+        },
+      },
+    ],
+  }
+
+  if (isHelius) {
+    try {
+      const response = await fetch(priorityRpcUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const json = await response.json()
+      const estimate = json?.result?.priorityFeeEstimate
+      if (typeof estimate === 'number') {
+        return { estimate, source: 'helius' }
+      }
+    } catch {
+      // fall through to fallback
+    }
+  }
+
+  if (connection) {
+    try {
+      const fees = await (connection as Connection & {
+        getRecentPrioritizationFees?: (
+          accounts?: PublicKey[],
+        ) => Promise<Array<{ prioritizationFee: number }>>
+      }).getRecentPrioritizationFees?.(accountKeys)
+      const values = (fees ?? [])
+        .map((entry) => entry.prioritizationFee)
+        .filter((value) => typeof value === 'number' && value > 0)
+        .sort((a, b) => a - b)
+      if (values.length > 0) {
+        const mid = Math.floor(values.length / 2)
+        const estimate =
+          values.length % 2 === 0
+            ? Math.round((values[mid - 1] + values[mid]) / 2)
+            : values[mid]
+        return { estimate, source: 'fallback' }
+      }
+    } catch {
+      // ignore fallback failures
+    }
+  }
+  return { estimate: null, source: null }
+}
+
 export const SYSTEM_PROGRAM = SystemProgram.programId
 export const RENT_SYSVAR = SYSVAR_RENT_PUBKEY
 export const TOKEN_PROGRAM = TOKEN_PROGRAM_ID
