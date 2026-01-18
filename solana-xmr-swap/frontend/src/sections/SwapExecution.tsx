@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
 import { PublicKey, Connection, ComputeBudgetProgram } from '@solana/web3.js'
 import { demoSwap } from '../data/samples'
@@ -81,6 +81,25 @@ export function SwapExecution() {
   const [complianceStatus, setComplianceStatus] = useState<
     'idle' | 'checking' | 'pass' | 'fail' | 'skipped'
   >('idle')
+
+  const debugEnabled =
+    (import.meta.env.VITE_DEBUG_LOGS as string | undefined)?.toLowerCase() === 'true'
+  const debugLog = useCallback((...args: unknown[]) => {
+    if (debugEnabled) {
+      console.debug('[swap]', ...args)
+    }
+  }, [debugEnabled])
+  const debugWarn = useCallback((...args: unknown[]) => {
+    if (debugEnabled) {
+      console.warn('[swap]', ...args)
+    }
+  }, [debugEnabled])
+  const redactHex = useCallback((value: string, keep = 8) => {
+    const trimmed = value.trim()
+    if (!trimmed) return ''
+    if (trimmed.length <= keep * 2) return trimmed
+    return `${trimmed.slice(0, keep)}...${trimmed.slice(-4)}`
+  }, [])
 
   const update = (key: keyof FormState, value: string) => {
     setForm((prev) => ({ ...prev, [key]: value }))
@@ -171,6 +190,12 @@ export function SwapExecution() {
       secret: demoSwap.secret,
     }))
     setError(null)
+  debugLog('Loaded demo swap vector', {
+    hashlock: redactHex(demoSwap.hashlock),
+    adaptorPoint: redactHex(demoSwap.adaptorPoint),
+    secondPoint: redactHex(demoSwap.secondPoint),
+    yPoint: redactHex(demoSwap.yPoint),
+  })
   }
 
   const pushStatus = (message: string, signature?: string) => {
@@ -184,12 +209,14 @@ export function SwapExecution() {
       connection,
     )
     if (!estimate || estimate <= 0) {
+      debugLog('Priority fee estimate unavailable', { source, estimate })
       return null
     }
     const sourceLabel = source === 'helius' ? 'Helius' : 'RPC fallback'
     pushStatus(
       `Priority fee estimate (${sourceLabel}): ${Math.round(estimate)} μ-lamports/CU`,
     )
+    debugLog('Priority fee estimate', { source, estimate })
     return ComputeBudgetProgram.setComputeUnitPrice({
       microLamports: Math.ceil(estimate),
     })
@@ -205,6 +232,10 @@ export function SwapExecution() {
     const pollMs = Number(import.meta.env.VITE_HELIUS_TX_POLL_MS ?? 15000)
     const poll = async () => {
       try {
+        debugLog('Helius poll start', {
+          lockPda: derived.lock.toBase58(),
+          rpcUrl: form.rpcUrl,
+        })
         const txs = await fetchHeliusTransactions(
           form.rpcUrl,
           derived.lock.toBase58(),
@@ -216,6 +247,7 @@ export function SwapExecution() {
         }
       } catch (err) {
         if (!cancelled) {
+          debugWarn('Helius poll failed', err)
           setHeliusError(
             err instanceof Error ? err.message : 'Failed to load Helius history',
           )
@@ -228,16 +260,47 @@ export function SwapExecution() {
       cancelled = true
       window.clearInterval(interval)
     }
-  }, [derived.lock, form.rpcUrl])
+  }, [derived.lock, form.rpcUrl, debugLog, debugWarn])
 
-  const execute = async (fn: () => Promise<void>) => {
+  useEffect(() => {
+    debugLog('Derived PDA state', {
+      wallet: wallet.publicKey?.toBase58() ?? null,
+      rpcUrl: form.rpcUrl,
+      programId: programId?.toBase58() ?? null,
+      programIdInput,
+      programIdError,
+      hashlockInput,
+      hashlockError,
+      hashlockLength: hashlockInput.length,
+      lockPda: derived.lock?.toBase58() ?? null,
+      vaultPda: derived.vault?.toBase58() ?? null,
+      pdaError,
+    })
+  }, [
+    wallet.publicKey,
+    form.rpcUrl,
+    programId,
+    programIdInput,
+    programIdError,
+    hashlockInput,
+    hashlockError,
+    derived.lock,
+    derived.vault,
+    pdaError,
+    debugLog,
+  ])
+
+  const execute = async (label: string, fn: () => Promise<void>) => {
     setError(null)
     setBusy(true)
+    debugLog('Execute action start', { label })
     try {
       await fn()
     } catch (err) {
+      debugWarn('Execution error', err)
       setError(err instanceof Error ? err.message : 'Transaction failed')
     } finally {
+      debugLog('Execute action end', { label })
       setBusy(false)
     }
   }
@@ -265,6 +328,23 @@ export function SwapExecution() {
       throw new Error('Invalid recipient address')
     }
 
+    debugLog('Initialize swap inputs', {
+      rpcUrl: form.rpcUrl,
+      programId: programId.toBase58(),
+      tokenMint: form.tokenMint,
+      amount: form.amount,
+      lockUntil: form.lockUntil,
+      hashlock: redactHex(form.hashlock),
+      adaptorPoint: redactHex(form.adaptorPoint),
+      secondPoint: redactHex(form.secondPoint),
+      yPoint: redactHex(form.yPoint),
+      r1: redactHex(form.r1),
+      r2: redactHex(form.r2),
+      challenge: redactHex(form.challenge),
+      response: redactHex(form.response),
+      recipient: recipientInfo.key?.toBase58() ?? null,
+    })
+
     if (complianceEnabled) {
       setComplianceStatus('checking')
       try {
@@ -272,6 +352,7 @@ export function SwapExecution() {
           wallet.publicKey.toBase58(),
           recipientInfo.key?.toBase58(),
         )
+        debugLog('Compliance result', compliance)
         const failed =
           !compliance.depositor.isClean ||
           (compliance.recipient && !compliance.recipient.isClean)
@@ -287,9 +368,11 @@ export function SwapExecution() {
         if (err instanceof Error && err.message === 'Compliance screening failed') {
           throw err
         }
+        debugWarn('Compliance check skipped', err)
         setComplianceStatus('skipped')
       }
     } else {
+      debugLog('Compliance disabled')
       setComplianceStatus('skipped')
     }
     const tokenMint = new PublicKey(form.tokenMint)
@@ -354,6 +437,7 @@ export function SwapExecution() {
           : [computeIx, ...(priorityIx ? [priorityIx] : [])],
       )
       .rpc()
+    debugLog('Initialize tx', { signature })
     pushStatus('Initialized swap', signature)
   }
 
@@ -361,6 +445,16 @@ export function SwapExecution() {
     if (!wallet.publicKey) {
       throw new Error('Connect a wallet first')
     }
+    debugLog('Verify DLEQ input', {
+      hashlock: redactHex(form.hashlock),
+      adaptorPoint: redactHex(form.adaptorPoint),
+      secondPoint: redactHex(form.secondPoint),
+      yPoint: redactHex(form.yPoint),
+      r1: redactHex(form.r1),
+      r2: redactHex(form.r2),
+      challenge: redactHex(form.challenge),
+      response: redactHex(form.response),
+    })
     const local = verifyDleqClientSide({
       adaptorPoint: form.adaptorPoint,
       secondPoint: form.secondPoint,
@@ -376,6 +470,7 @@ export function SwapExecution() {
         `Local DLEQ verification failed (challengeMatches=${local.report.challengeMatches}, lhsR1Matches=${local.report.lhsR1Matches}, lhsR2Matches=${local.report.lhsR2Matches})`,
       )
     }
+    debugLog('Local DLEQ verified', local.report)
     pushStatus('Local DLEQ verified')
     if (!wallet.publicKey || !programId || !derived.lock) {
       pushStatus(`On-chain verify skipped: ${pdaError ?? 'missing PDA or program ID'}`)
@@ -395,6 +490,7 @@ export function SwapExecution() {
       })
       .preInstructions([computeIx, ...(priorityIx ? [priorityIx] : [])])
       .rpc()
+    debugLog('Verify DLEQ tx', { signature })
     pushStatus('DLEQ verified', signature)
   }
 
@@ -405,6 +501,13 @@ export function SwapExecution() {
     if (!programId || !derived.lock || !derived.vault) {
       throw new Error('Missing PDA or program ID')
     }
+    debugLog('Unlock inputs', {
+      lockPda: derived.lock.toBase58(),
+      vaultPda: derived.vault.toBase58(),
+      tokenMint: form.tokenMint,
+      secret: redactHex(form.secret),
+      recipient: recipientInfo.key?.toBase58() ?? null,
+    })
     const tokenMint = new PublicKey(form.tokenMint)
     const secret = parseHex32(form.secret)
     const program = getProgram(connection, wallet, programId)
@@ -444,6 +547,7 @@ export function SwapExecution() {
           : [computeIx, ...(priorityIx ? [priorityIx] : [])],
       )
       .rpc()
+    debugLog('Unlock tx', { signature })
     pushStatus('Unlocked swap', signature)
   }
 
@@ -454,6 +558,11 @@ export function SwapExecution() {
     if (!programId || !derived.lock || !derived.vault) {
       throw new Error('Missing PDA or program ID')
     }
+    debugLog('Refund inputs', {
+      lockPda: derived.lock.toBase58(),
+      vaultPda: derived.vault.toBase58(),
+      tokenMint: form.tokenMint,
+    })
     const tokenMint = new PublicKey(form.tokenMint)
     const program = getProgram(connection, wallet, programId)
     const { ata, ix } = await ensureAssociatedTokenAccount(
@@ -485,6 +594,7 @@ export function SwapExecution() {
           : [computeIx, ...(priorityIx ? [priorityIx] : [])],
       )
       .rpc()
+    debugLog('Refund tx', { signature })
     pushStatus('Refunded swap', signature)
   }
 
@@ -537,6 +647,11 @@ export function SwapExecution() {
   })
 
   const exportAudit = () => {
+    debugLog('Export audit', {
+      rpcUrl: form.rpcUrl,
+      programId: programId?.toBase58() ?? null,
+      lockPda: derived.lock?.toBase58() ?? null,
+    })
     downloadJson('swap-audit.json', buildAuditSnapshot())
   }
 
@@ -546,6 +661,7 @@ export function SwapExecution() {
       throw new Error('Clipboard API unavailable')
     }
     await navigator.clipboard.writeText(payload)
+    debugLog('Audit JSON copied')
     pushStatus('Audit JSON copied to clipboard')
   }
 
@@ -771,22 +887,42 @@ export function SwapExecution() {
       </div>
 
       <div className="actions">
-        <button className="primary" disabled={busy} onClick={() => execute(initializeSwap)}>
+        <button
+          className="primary"
+          disabled={busy}
+          onClick={() => execute('initialize', initializeSwap)}
+        >
           Initialize
         </button>
-        <button className="secondary" disabled={busy} onClick={() => execute(verifyDleq)}>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => execute('verify_dleq', verifyDleq)}
+        >
           Verify DLEQ
         </button>
-        <button className="secondary" disabled={busy} onClick={() => execute(unlockSwap)}>
+        <button
+          className="secondary"
+          disabled={busy}
+          onClick={() => execute('unlock', unlockSwap)}
+        >
           Unlock
         </button>
-        <button className="ghost" disabled={busy} onClick={() => execute(refundSwap)}>
+        <button
+          className="ghost"
+          disabled={busy}
+          onClick={() => execute('refund', refundSwap)}
+        >
           Refund
         </button>
         <button className="ghost" disabled={busy} onClick={exportAudit}>
           Export Audit
         </button>
-        <button className="ghost" disabled={busy} onClick={() => execute(copyAudit)}>
+        <button
+          className="ghost"
+          disabled={busy}
+          onClick={() => execute('copy_audit', copyAudit)}
+        >
           Copy Audit JSON
         </button>
       </div>
