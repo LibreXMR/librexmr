@@ -90,27 +90,72 @@ export function SwapExecution() {
     return new Connection(form.rpcUrl, 'confirmed')
   }, [form.rpcUrl])
 
+  const programIdInput = useMemo(() => form.programId.trim(), [form.programId])
+
   const programId = useMemo(() => {
+    if (!programIdInput) {
+      return null
+    }
     try {
-      return new PublicKey(form.programId)
+      return new PublicKey(programIdInput)
     } catch {
       return null
     }
-  }, [form.programId])
+  }, [programIdInput])
+
+  const programIdError = useMemo(() => {
+    if (!programIdInput) {
+      return 'Program ID is required'
+    }
+    try {
+      new PublicKey(programIdInput)
+      return null
+    } catch {
+      return 'Program ID is invalid'
+    }
+  }, [programIdInput])
+
+  const hashlockInput = useMemo(() => form.hashlock.trim(), [form.hashlock])
+
+  const hashlockError = useMemo(() => {
+    if (!hashlockInput) {
+      return 'Hashlock is required'
+    }
+    if (!/^[0-9a-fA-F]+$/.test(hashlockInput)) {
+      return 'Hashlock must be hex'
+    }
+    if (hashlockInput.length !== 64) {
+      return 'Hashlock must be 64 hex chars'
+    }
+    return null
+  }, [hashlockInput])
 
   const derived = useMemo(() => {
     if (!wallet.publicKey || !programId) {
       return { lock: null, vault: null }
     }
     try {
-      const hashlock = parseHex32(form.hashlock)
+      const hashlock = parseHex32(hashlockInput)
       const [lock] = deriveLockPda(wallet.publicKey, hashlock, programId)
       const [vault] = deriveVaultPda(lock, programId)
       return { lock, vault }
     } catch {
       return { lock: null, vault: null }
     }
-  }, [wallet.publicKey, programId, form.hashlock])
+  }, [wallet.publicKey, programId, hashlockInput])
+
+  const pdaError = useMemo(() => {
+    if (!wallet.publicKey) {
+      return 'Wallet not connected'
+    }
+    if (!programId) {
+      return programIdError
+    }
+    if (hashlockError) {
+      return hashlockError
+    }
+    return null
+  }, [wallet.publicKey, programId, programIdError, hashlockError])
 
   const loadSample = () => {
     setForm((prev) => ({
@@ -316,9 +361,6 @@ export function SwapExecution() {
     if (!wallet.publicKey) {
       throw new Error('Connect a wallet first')
     }
-    if (!programId || !derived.lock) {
-      throw new Error('Missing PDA or program ID')
-    }
     const local = verifyDleqClientSide({
       adaptorPoint: form.adaptorPoint,
       secondPoint: form.secondPoint,
@@ -335,6 +377,10 @@ export function SwapExecution() {
       )
     }
     pushStatus('Local DLEQ verified')
+    if (!wallet.publicKey || !programId || !derived.lock) {
+      pushStatus(`On-chain verify skipped: ${pdaError ?? 'missing PDA or program ID'}`)
+      return
+    }
     const program = getProgram(connection, wallet, programId)
     const computeIx = ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 })
     const priorityIx = await buildPriorityFeeIx([
@@ -574,6 +620,9 @@ export function SwapExecution() {
             value={form.programId}
             onChange={(event) => update('programId', event.target.value)}
           />
+          {programIdError && (
+            <span className="muted">{programIdError}</span>
+          )}
           {programId && (
             <a
               className="muted"
@@ -616,6 +665,9 @@ export function SwapExecution() {
             onChange={(event) => update('hashlock', event.target.value)}
             placeholder="32-byte hex"
           />
+          {hashlockError && (
+            <span className="muted">{hashlockError}</span>
+          )}
         </label>
       </div>
 
@@ -708,6 +760,9 @@ export function SwapExecution() {
         <label>
           Derived Lock PDA
           <input value={derived.lock?.toBase58() ?? ''} readOnly />
+          {!derived.lock && pdaError && (
+            <span className="muted">{pdaError}</span>
+          )}
         </label>
         <label>
           Derived Vault PDA
