@@ -1,6 +1,6 @@
 //! Solana RPC client implementation for swap coordinator.
 
-use anyhow::{Context, Result};
+use anyhow::{anyhow, Context, Result};
 use async_trait::async_trait;
 use solana_client::rpc_client::RpcClient;
 use solana_sdk::commitment_config::CommitmentConfig;
@@ -14,6 +14,8 @@ use spl_associated_token_account::instruction::create_associated_token_account;
 
 use anchor_lang::{InstructionData, ToAccountMetas};
 use std::str::FromStr;
+use std::thread::sleep;
+use std::time::Duration;
 
 use crate::driver::SolanaClient;
 
@@ -34,6 +36,35 @@ pub struct SolanaSwapClient {
     response: [u8; 32],
 }
 
+#[derive(Clone, Copy)]
+struct RetryConfig {
+    max_retries: u64,
+    base_delay_ms: u64,
+    max_delay_ms: u64,
+}
+
+impl RetryConfig {
+    fn from_env() -> Self {
+        Self {
+            max_retries: read_env_u64("SOLANA_RPC_MAX_RETRIES", 2),
+            base_delay_ms: read_env_u64("SOLANA_RPC_BASE_DELAY_MS", 250),
+            max_delay_ms: read_env_u64("SOLANA_RPC_MAX_DELAY_MS", 2000),
+        }
+    }
+
+    fn backoff_ms(&self, attempt: u64) -> u64 {
+        let delay = self.base_delay_ms.saturating_mul(2u64.saturating_pow(attempt as u32));
+        std::cmp::min(delay, self.max_delay_ms)
+    }
+}
+
+fn read_env_u64(key: &str, fallback: u64) -> u64 {
+    std::env::var(key)
+        .ok()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(fallback)
+}
+
 impl SolanaSwapClient {
     pub fn new(
         rpc_url: &str,
@@ -51,8 +82,13 @@ impl SolanaSwapClient {
         challenge: [u8; 32],
         response: [u8; 32],
     ) -> Self {
+        let timeout_ms = read_env_u64("SOLANA_RPC_TIMEOUT_MS", 30_000);
         Self {
-            rpc: RpcClient::new_with_commitment(rpc_url.to_string(), CommitmentConfig::confirmed()),
+            rpc: RpcClient::new_with_timeout_and_commitment(
+                rpc_url.to_string(),
+                Duration::from_millis(timeout_ms),
+                CommitmentConfig::confirmed(),
+            ),
             program_id,
             depositor,
             unlocker,
@@ -100,13 +136,21 @@ impl SolanaSwapClient {
         signers: &[&Keypair],
         payer: &Pubkey,
     ) -> Result<Signature> {
-        let blockhash = self.rpc.get_latest_blockhash()?;
-        let tx = Transaction::new_signed_with_payer(&ixs, Some(payer), signers, blockhash);
-        let sig = self
-            .rpc
-            .send_and_confirm_transaction(&tx)
-            .context("send transaction failed")?;
-        Ok(sig)
+        let retry = RetryConfig::from_env();
+        for attempt in 0..=retry.max_retries {
+            let blockhash = self.rpc.get_latest_blockhash()?;
+            let tx = Transaction::new_signed_with_payer(&ixs, Some(payer), signers, blockhash);
+            match self.rpc.send_and_confirm_transaction(&tx) {
+                Ok(sig) => return Ok(sig),
+                Err(err) => {
+                    if attempt >= retry.max_retries {
+                        return Err(err).context("send transaction failed");
+                    }
+                    sleep(Duration::from_millis(retry.backoff_ms(attempt)));
+                }
+            }
+        }
+        Err(anyhow::anyhow!("send transaction failed after retries"))
     }
 
     fn compute_budget_ix(&self) -> Instruction {
@@ -122,6 +166,23 @@ impl SolanaSwapClient {
 
     fn derive_vault_pda(&self, lock_pda: &Pubkey) -> (Pubkey, u8) {
         Pubkey::find_program_address(&[b"vault", lock_pda.as_ref()], &self.program_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::RetryConfig;
+
+    #[test]
+    fn retry_backoff_caps() {
+        let cfg = RetryConfig {
+            max_retries: 2,
+            base_delay_ms: 100,
+            max_delay_ms: 150,
+        };
+        assert_eq!(cfg.backoff_ms(0), 100);
+        assert_eq!(cfg.backoff_ms(1), 150);
+        assert_eq!(cfg.backoff_ms(2), 150);
     }
 }
 

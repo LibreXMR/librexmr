@@ -1,6 +1,7 @@
 mod db;
 mod driver;
 mod solana;
+mod config;
 mod metrics;
 mod state;
 pub mod xmr;
@@ -30,6 +31,7 @@ use xmr_wallet::XmrWallet;
 use crate::db::{JsonFileDb, SwapDb};
 use crate::driver::step;
 use crate::metrics::NoopMetrics;
+use crate::config::{validate_nonzero, validate_rpc_url};
 use crate::solana::SolanaSwapClient;
 use crate::state::SwapState;
 use crate::xmr::{claim_xmr, parse_network, XmrClaimRequest};
@@ -147,6 +149,8 @@ async fn main() -> Result<()> {
 }
 
 async fn run_demo(args: DemoArgs) -> Result<()> {
+    validate_rpc_url("rpc", &args.rpc)?;
+    validate_nonzero("lock duration", args.lock_duration)?;
     let depositor = read_keypair_file(&args.depositor)
         .map_err(|err| anyhow!("read depositor keypair {}: {}", args.depositor.display(), err))?;
     let unlocker = if let Some(path) = args.unlocker.as_ref() {
@@ -245,6 +249,7 @@ async fn run_demo(args: DemoArgs) -> Result<()> {
 }
 
 fn run_setup_mint(args: SetupMintArgs) -> Result<()> {
+    validate_rpc_url("rpc", &args.rpc)?;
     let depositor = read_keypair_file(&args.depositor)
         .map_err(|err| anyhow!("read depositor keypair {}: {}", args.depositor.display(), err))?;
     let rpc = RpcClient::new_with_commitment(args.rpc.clone(), CommitmentConfig::confirmed());
@@ -254,6 +259,7 @@ fn run_setup_mint(args: SetupMintArgs) -> Result<()> {
 }
 
 async fn run_claim_xmr(args: ClaimXmrArgs) -> Result<()> {
+    validate_rpc_url("rpc", &args.rpc)?;
     let network = parse_network(&args.network)?;
     let wallet = XmrWallet::connect(&args.rpc).await?;
     let request = XmrClaimRequest {
