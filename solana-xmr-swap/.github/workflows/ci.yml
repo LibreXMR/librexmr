@@ -13,6 +13,22 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: cargo-${{ runner.os }}-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-
+
+      - name: Rust fmt
+        run: cargo fmt -- --check
 
       - name: Install Solana toolchain
         run: |
@@ -49,7 +65,11 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version: "22.22.0"
+          cache: "npm"
+          cache-dependency-path: |
+            frontend/package-lock.json
+            tools/dleq_verifier_ts/package-lock.json
 
       - name: Build TS verifier
         run: |
@@ -67,6 +87,11 @@ jobs:
           cd frontend
           npm ci
           npm run build
+
+      - name: Frontend lint
+        run: |
+          cd frontend
+          npm run lint
 
       - name: Frontend tests
         run: |
