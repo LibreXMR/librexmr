@@ -1,3 +1,5 @@
+import { getRetryOptions, retryAsync } from './retry'
+
 export type HeliusTransaction = {
   signature: string
   timestamp: number
@@ -58,13 +60,17 @@ export async function fetchHeliusTransactions(
       DEFAULT_TIMEOUT_MS,
   )
   const url = `${config.apiUrl}/v0/addresses/${address}/transactions?api-key=${config.apiKey}&limit=${boundedLimit}`
-  const controller = new AbortController()
-  const timer = window.setTimeout(() => controller.abort(), timeoutMs)
-  const response = await fetch(url, { signal: controller.signal })
-  window.clearTimeout(timer)
-  if (!response.ok) {
-    throw new Error(`Helius API error: ${response.status}`)
-  }
-  const data = (await response.json()) as HeliusTransaction[]
-  return data
+  return retryAsync(async () => {
+    const controller = new AbortController()
+    const timer = window.setTimeout(() => controller.abort(), timeoutMs)
+    try {
+      const response = await fetch(url, { signal: controller.signal })
+      if (!response.ok) {
+        throw new Error(`Helius API error: ${response.status}`)
+      }
+      return (await response.json()) as HeliusTransaction[]
+    } finally {
+      window.clearTimeout(timer)
+    }
+  }, getRetryOptions())
 }

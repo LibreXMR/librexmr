@@ -11,6 +11,14 @@ import {
   type HeliusTransaction,
 } from '../lib/helius'
 import { screenSwapParties } from '../lib/compliance'
+import { getRetryOptions, retryAsync } from '../lib/retry'
+import {
+  validateHexBytes,
+  validateI64,
+  validatePublicKey,
+  validateU64,
+  validateUrl,
+} from '../lib/validation'
 import {
   ATOMIC_LOCK_PROGRAM_ID,
 } from '../idl/atomic_lock'
@@ -51,6 +59,23 @@ type StatusEntry = {
   signature?: string
 }
 
+type RpcDiagnostics = {
+  latencyMs: number | null
+  lastOkAt: string | null
+  errorCount: number
+  lastError: string | null
+  checking: boolean
+}
+
+type ProgramStatus =
+  | { status: 'unknown' }
+  | { status: 'checking' }
+  | { status: 'missing' }
+  | { status: 'deployed'; owner: string }
+  | { status: 'error'; error: string }
+
+type AppError = Error & { code?: string }
+
 const initialForm: FormState = {
   rpcUrl: DEFAULT_RPC_URL,
   programId: ATOMIC_LOCK_PROGRAM_ID.toBase58(),
@@ -81,6 +106,16 @@ export function SwapExecution() {
   const [complianceStatus, setComplianceStatus] = useState<
     'idle' | 'checking' | 'pass' | 'fail' | 'skipped'
   >('idle')
+  const [rpcDiagnostics, setRpcDiagnostics] = useState<RpcDiagnostics>({
+    latencyMs: null,
+    lastOkAt: null,
+    errorCount: 0,
+    lastError: null,
+    checking: false,
+  })
+  const [programStatus, setProgramStatus] = useState<ProgramStatus>({
+    status: 'unknown',
+  })
 
   const debugEnabled =
     (import.meta.env.VITE_DEBUG_LOGS as string | undefined)?.toLowerCase() === 'true'
@@ -99,6 +134,12 @@ export function SwapExecution() {
     if (!trimmed) return ''
     if (trimmed.length <= keep * 2) return trimmed
     return `${trimmed.slice(0, keep)}...${trimmed.slice(-4)}`
+  }, [])
+
+  const makeError = useCallback((code: string, message: string) => {
+    const err = new Error(message) as AppError
+    err.code = code
+    return err
   }, [])
 
   const update = (key: keyof FormState, value: string) => {
@@ -122,32 +163,42 @@ export function SwapExecution() {
     }
   }, [programIdInput])
 
-  const programIdError = useMemo(() => {
-    if (!programIdInput) {
-      return 'Program ID is required'
-    }
-    try {
-      new PublicKey(programIdInput)
-      return null
-    } catch {
-      return 'Program ID is invalid'
-    }
-  }, [programIdInput])
+  const programIdError = useMemo(
+    () => validatePublicKey(programIdInput, 'Program ID'),
+    [programIdInput],
+  )
 
   const hashlockInput = useMemo(() => form.hashlock.trim(), [form.hashlock])
 
-  const hashlockError = useMemo(() => {
-    if (!hashlockInput) {
-      return 'Hashlock is required'
-    }
-    if (!/^[0-9a-fA-F]+$/.test(hashlockInput)) {
-      return 'Hashlock must be hex'
-    }
-    if (hashlockInput.length !== 64) {
-      return 'Hashlock must be 64 hex chars'
-    }
-    return null
-  }, [hashlockInput])
+  const hashlockError = useMemo(
+    () => validateHexBytes(hashlockInput, 32, 'Hashlock'),
+    [hashlockInput],
+  )
+
+  const rpcUrlError = useMemo(
+    () => validateUrl(form.rpcUrl, 'RPC URL'),
+    [form.rpcUrl],
+  )
+
+  const tokenMintError = useMemo(
+    () => validatePublicKey(form.tokenMint, 'Token mint'),
+    [form.tokenMint],
+  )
+
+  const amountError = useMemo(
+    () => validateU64(form.amount, 'Amount'),
+    [form.amount],
+  )
+
+  const lockUntilError = useMemo(
+    () => validateI64(form.lockUntil, 'Lock until'),
+    [form.lockUntil],
+  )
+
+  const secretError = useMemo(
+    () => validateHexBytes(form.secret, 32, 'Secret', false),
+    [form.secret],
+  )
 
   const derived = useMemo(() => {
     if (!wallet.publicKey || !programId) {
@@ -175,6 +226,24 @@ export function SwapExecution() {
     }
     return null
   }, [wallet.publicKey, programId, programIdError, hashlockError])
+
+  const onChainEnabled = useMemo(
+    () => programStatus.status === 'deployed',
+    [programStatus.status],
+  )
+
+  const onChainStatusMessage = useMemo(() => {
+    switch (programStatus.status) {
+      case 'checking':
+        return 'Checking program deployment on this RPC...'
+      case 'missing':
+        return 'Program not deployed on this RPC. On-chain actions disabled.'
+      case 'error':
+        return `Program check failed: ${programStatus.error}`
+      default:
+        return null
+    }
+  }, [programStatus])
 
   const loadSample = () => {
     setForm((prev) => ({
@@ -263,6 +332,90 @@ export function SwapExecution() {
   }, [derived.lock, form.rpcUrl, debugLog, debugWarn])
 
   useEffect(() => {
+    if (!programId || rpcUrlError) {
+      setProgramStatus({ status: 'unknown' })
+      return
+    }
+    let cancelled = false
+    const check = async () => {
+      setProgramStatus({ status: 'checking' })
+      try {
+        const info = await retryAsync(
+          () => connection.getAccountInfo(programId, 'confirmed'),
+          getRetryOptions(),
+        )
+        if (cancelled) return
+        if (!info) {
+          setProgramStatus({ status: 'missing' })
+          return
+        }
+        if (!info.executable) {
+          setProgramStatus({ status: 'error', error: 'Program account not executable' })
+          return
+        }
+        setProgramStatus({ status: 'deployed', owner: info.owner.toBase58() })
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : 'RPC error'
+          debugWarn('Program check failed', message)
+          setProgramStatus({ status: 'error', error: message })
+        }
+      }
+    }
+    check()
+    return () => {
+      cancelled = true
+    }
+  }, [programId, rpcUrlError, connection, debugWarn, debugLog])
+
+  useEffect(() => {
+    if (rpcUrlError) {
+      setRpcDiagnostics((prev) => ({
+        ...prev,
+        lastError: rpcUrlError,
+      }))
+      return
+    }
+    let cancelled = false
+    const poll = async () => {
+      const started = performance.now()
+      setRpcDiagnostics((prev) => ({ ...prev, checking: true }))
+      try {
+        await retryAsync(
+          () => connection.getLatestBlockhash('confirmed'),
+          getRetryOptions(),
+        )
+        if (cancelled) return
+        const latency = Math.round(performance.now() - started)
+        setRpcDiagnostics((prev) => ({
+          ...prev,
+          checking: false,
+          latencyMs: latency,
+          lastOkAt: new Date().toISOString(),
+          lastError: null,
+        }))
+      } catch (err) {
+        if (!cancelled) {
+          const message = err instanceof Error ? err.message : 'RPC error'
+          debugWarn('RPC ping failed', message)
+          setRpcDiagnostics((prev) => ({
+            ...prev,
+            checking: false,
+            errorCount: prev.errorCount + 1,
+            lastError: message,
+          }))
+        }
+      }
+    }
+    poll()
+    const interval = window.setInterval(poll, 20000)
+    return () => {
+      cancelled = true
+      window.clearInterval(interval)
+    }
+  }, [connection, rpcUrlError, debugWarn])
+
+  useEffect(() => {
     debugLog('Derived PDA state', {
       wallet: wallet.publicKey?.toBase58() ?? null,
       rpcUrl: form.rpcUrl,
@@ -297,8 +450,18 @@ export function SwapExecution() {
     try {
       await fn()
     } catch (err) {
-      debugWarn('Execution error', err)
-      setError(err instanceof Error ? err.message : 'Transaction failed')
+      const error = err as AppError
+      debugWarn('Execution error', {
+        label,
+        code: error?.code,
+        message: error?.message,
+        err,
+      })
+      if (error?.code) {
+        setError(`[${error.code}] ${error.message}`)
+      } else {
+        setError(err instanceof Error ? err.message : 'Transaction failed')
+      }
     } finally {
       debugLog('Execute action end', { label })
       setBusy(false)
@@ -319,13 +482,34 @@ export function SwapExecution() {
 
   const initializeSwap = async () => {
     if (!wallet.publicKey) {
-      throw new Error('Connect a wallet first')
+      throw makeError('WALLET_REQUIRED', 'Connect a wallet first')
     }
     if (!programId) {
-      throw new Error('Invalid program ID')
+      throw makeError('PROGRAM_INVALID', 'Invalid program ID')
     }
     if (form.recipient.trim() && !recipientInfo.valid) {
-      throw new Error('Invalid recipient address')
+      throw makeError('RECIPIENT_INVALID', 'Invalid recipient address')
+    }
+    if (rpcUrlError) {
+      throw makeError('RPC_URL_INVALID', rpcUrlError)
+    }
+    if (hashlockError) {
+      throw makeError('HASHLOCK_INVALID', hashlockError)
+    }
+    if (tokenMintError) {
+      throw makeError('TOKEN_MINT_INVALID', tokenMintError)
+    }
+    if (amountError) {
+      throw makeError('AMOUNT_INVALID', amountError)
+    }
+    if (lockUntilError) {
+      throw makeError('LOCK_UNTIL_INVALID', lockUntilError)
+    }
+    if (!onChainEnabled) {
+      throw makeError(
+        'PROGRAM_NOT_READY',
+        onChainStatusMessage ?? 'Program not deployed on this RPC',
+      )
     }
 
     debugLog('Initialize swap inputs', {
@@ -361,11 +545,11 @@ export function SwapExecution() {
           (!compliance.recipient || compliance.recipient.source === 'skipped')
         if (failed) {
           setComplianceStatus('fail')
-          throw new Error('Compliance screening failed')
+          throw makeError('COMPLIANCE_FAIL', 'Compliance screening failed')
         }
         setComplianceStatus(skipped ? 'skipped' : 'pass')
       } catch (err) {
-        if (err instanceof Error && err.message === 'Compliance screening failed') {
+        if ((err as AppError)?.code === 'COMPLIANCE_FAIL') {
           throw err
         }
         debugWarn('Compliance check skipped', err)
@@ -443,7 +627,10 @@ export function SwapExecution() {
 
   const verifyDleq = async () => {
     if (!wallet.publicKey) {
-      throw new Error('Connect a wallet first')
+      throw makeError('WALLET_REQUIRED', 'Connect a wallet first')
+    }
+    if (hashlockError) {
+      throw makeError('HASHLOCK_INVALID', hashlockError)
     }
     debugLog('Verify DLEQ input', {
       hashlock: redactHex(form.hashlock),
@@ -466,12 +653,17 @@ export function SwapExecution() {
       hashlock: form.hashlock,
     })
     if (!local.ok) {
-      throw new Error(
+      throw makeError(
+        'DLEQ_FAILED',
         `Local DLEQ verification failed (challengeMatches=${local.report.challengeMatches}, lhsR1Matches=${local.report.lhsR1Matches}, lhsR2Matches=${local.report.lhsR2Matches})`,
       )
     }
     debugLog('Local DLEQ verified', local.report)
     pushStatus('Local DLEQ verified')
+    if (!onChainEnabled) {
+      pushStatus(`On-chain verify skipped: ${onChainStatusMessage ?? 'program not ready'}`)
+      return
+    }
     if (!wallet.publicKey || !programId || !derived.lock) {
       pushStatus(`On-chain verify skipped: ${pdaError ?? 'missing PDA or program ID'}`)
       return
@@ -496,10 +688,22 @@ export function SwapExecution() {
 
   const unlockSwap = async () => {
     if (!wallet.publicKey) {
-      throw new Error('Connect a wallet first')
+      throw makeError('WALLET_REQUIRED', 'Connect a wallet first')
     }
     if (!programId || !derived.lock || !derived.vault) {
-      throw new Error('Missing PDA or program ID')
+      throw makeError('PDA_MISSING', 'Missing PDA or program ID')
+    }
+    if (!onChainEnabled) {
+      throw makeError(
+        'PROGRAM_NOT_READY',
+        onChainStatusMessage ?? 'Program not deployed on this RPC',
+      )
+    }
+    if (tokenMintError) {
+      throw makeError('TOKEN_MINT_INVALID', tokenMintError)
+    }
+    if (secretError) {
+      throw makeError('SECRET_INVALID', secretError)
     }
     debugLog('Unlock inputs', {
       lockPda: derived.lock.toBase58(),
@@ -512,7 +716,7 @@ export function SwapExecution() {
     const secret = parseHex32(form.secret)
     const program = getProgram(connection, wallet, programId)
     if (!recipientInfo.valid || !recipientInfo.key) {
-      throw new Error('Recipient address is invalid')
+      throw makeError('RECIPIENT_INVALID', 'Recipient address is invalid')
     }
     const recipient = recipientInfo.key
 
@@ -549,14 +753,24 @@ export function SwapExecution() {
       .rpc()
     debugLog('Unlock tx', { signature })
     pushStatus('Unlocked swap', signature)
+    setForm((prev) => ({ ...prev, secret: '' }))
   }
 
   const refundSwap = async () => {
     if (!wallet.publicKey) {
-      throw new Error('Connect a wallet first')
+      throw makeError('WALLET_REQUIRED', 'Connect a wallet first')
     }
     if (!programId || !derived.lock || !derived.vault) {
-      throw new Error('Missing PDA or program ID')
+      throw makeError('PDA_MISSING', 'Missing PDA or program ID')
+    }
+    if (!onChainEnabled) {
+      throw makeError(
+        'PROGRAM_NOT_READY',
+        onChainStatusMessage ?? 'Program not deployed on this RPC',
+      )
+    }
+    if (tokenMintError) {
+      throw makeError('TOKEN_MINT_INVALID', tokenMintError)
     }
     debugLog('Refund inputs', {
       lockPda: derived.lock.toBase58(),
@@ -709,6 +923,35 @@ export function SwapExecution() {
         program on the target RPC (localnet or devnet).
       </div>
 
+      {onChainStatusMessage && (
+        <div className="alert error">{onChainStatusMessage}</div>
+      )}
+
+      <div className="output">
+        <div className="output-header">
+          <span>RPC Diagnostics</span>
+        </div>
+        <ul className="status-list">
+          <li>
+            Status:{' '}
+            {rpcDiagnostics.checking
+              ? 'checking...'
+              : rpcDiagnostics.lastError
+                ? 'error'
+                : 'ok'}
+          </li>
+          <li>Latency: {rpcDiagnostics.latencyMs ?? '—'} ms</li>
+          <li>Last ok: {rpcDiagnostics.lastOkAt ?? '—'}</li>
+          <li>Errors: {rpcDiagnostics.errorCount}</li>
+          {rpcDiagnostics.lastError && (
+            <li>Last error: {rpcDiagnostics.lastError}</li>
+          )}
+          {programStatus.status === 'deployed' && (
+            <li>Program owner: {programStatus.owner}</li>
+          )}
+        </ul>
+      </div>
+
       <div className="grid two">
         <label>
           RPC Provider
@@ -729,6 +972,7 @@ export function SwapExecution() {
             value={form.rpcUrl}
             onChange={(event) => update('rpcUrl', event.target.value)}
           />
+          {rpcUrlError && <span className="muted">{rpcUrlError}</span>}
         </label>
         <label>
           Program ID
@@ -757,6 +1001,7 @@ export function SwapExecution() {
             onChange={(event) => update('tokenMint', event.target.value)}
             placeholder="Token mint address"
           />
+          {tokenMintError && <span className="muted">{tokenMintError}</span>}
         </label>
         <label>
           Amount (raw)
@@ -765,6 +1010,7 @@ export function SwapExecution() {
             onChange={(event) => update('amount', event.target.value)}
             placeholder="Amount in base units"
           />
+          {amountError && <span className="muted">{amountError}</span>}
         </label>
         <label>
           Lock until (unix)
@@ -773,6 +1019,7 @@ export function SwapExecution() {
             onChange={(event) => update('lockUntil', event.target.value)}
             placeholder="Unix timestamp"
           />
+          {lockUntilError && <span className="muted">{lockUntilError}</span>}
         </label>
         <label>
           Hashlock (SHA-256)
@@ -847,6 +1094,7 @@ export function SwapExecution() {
             onChange={(event) => update('secret', event.target.value)}
             placeholder="32-byte hex"
           />
+          {secretError && <span className="muted">{secretError}</span>}
         </label>
         <label>
           Recipient (unlock destination)
@@ -889,7 +1137,7 @@ export function SwapExecution() {
       <div className="actions">
         <button
           className="primary"
-          disabled={busy}
+          disabled={busy || !onChainEnabled}
           onClick={() => execute('initialize', initializeSwap)}
         >
           Initialize
@@ -903,14 +1151,14 @@ export function SwapExecution() {
         </button>
         <button
           className="secondary"
-          disabled={busy}
+          disabled={busy || !onChainEnabled}
           onClick={() => execute('unlock', unlockSwap)}
         >
           Unlock
         </button>
         <button
           className="ghost"
-          disabled={busy}
+          disabled={busy || !onChainEnabled}
           onClick={() => execute('refund', refundSwap)}
         >
           Refund

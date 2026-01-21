@@ -13,6 +13,7 @@ import {
 } from '@solana/spl-token'
 import { ATOMIC_LOCK_IDL, ATOMIC_LOCK_PROGRAM_ID } from '../idl/atomic_lock'
 import { hexToBytes } from './hex'
+import { getRetryOptions, retryAsync } from './retry'
 
 export const LOCK_SEED_PREFIX = new TextEncoder().encode('lock')
 export const VAULT_SEED_PREFIX = new TextEncoder().encode('vault')
@@ -123,13 +124,15 @@ export async function fetchPriorityFeeEstimate(
 
   if (isHelius) {
     try {
-      const response = await fetch(priorityRpcUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      const json = await response.json()
-      const estimate = json?.result?.priorityFeeEstimate
+      const estimate = await retryAsync(async () => {
+        const response = await fetch(priorityRpcUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        const json = await response.json()
+        return json?.result?.priorityFeeEstimate
+      }, getRetryOptions())
       if (typeof estimate === 'number') {
         return { estimate, source: 'helius' }
       }
@@ -140,11 +143,15 @@ export async function fetchPriorityFeeEstimate(
 
   if (connection) {
     try {
-      const fees = await (connection as Connection & {
+      const fees = await retryAsync(async () => {
+        return (
+          (connection as Connection & {
         getRecentPrioritizationFees?: (
           accounts?: PublicKey[],
         ) => Promise<Array<{ prioritizationFee: number }>>
-      }).getRecentPrioritizationFees?.(accountKeys)
+          }).getRecentPrioritizationFees?.(accountKeys) ?? []
+        )
+      }, getRetryOptions())
       const values = (fees ?? [])
         .map((entry) => entry.prioritizationFee)
         .filter((value) => typeof value === 'number' && value > 0)

@@ -1,4 +1,10 @@
-import { describe, expect, it, vi, afterEach } from 'vitest'
+import { describe, expect, it, vi, afterEach, beforeEach } from 'vitest'
+beforeEach(() => {
+  vi.stubEnv('VITE_RPC_RETRY_MAX', '0')
+  vi.stubEnv('VITE_RPC_RETRY_BASE_MS', '0')
+  vi.stubEnv('VITE_RPC_RETRY_MAX_MS', '0')
+  vi.stubEnv('VITE_RPC_RETRY_JITTER_MS', '0')
+})
 import {
   fetchHeliusTransactions,
   getHeliusApiConfig,
