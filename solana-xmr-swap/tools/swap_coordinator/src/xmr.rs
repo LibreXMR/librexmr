@@ -1,6 +1,7 @@
 use anyhow::{anyhow, Result};
 use curve25519_dalek::scalar::Scalar;
 use monero::Network;
+use zeroize::Zeroizing;
 
 use xmr_wallet::{execute_claim, ClaimParams, XmrWallet};
 
@@ -18,7 +19,7 @@ pub async fn claim_xmr(wallet: &XmrWallet, req: &XmrClaimRequest) -> Result<Stri
     let params = ClaimParams {
         alice_partial: Scalar::from_bytes_mod_order(req.alice_partial),
         bob_partial: Scalar::from_bytes_mod_order(req.bob_partial),
-        revealed_secret: req.revealed_secret,
+        revealed_secret: Zeroizing::new(req.revealed_secret),
         destination_address: req.destination_address.clone(),
         network: req.network,
         wallet_filename: req.wallet_filename.clone(),

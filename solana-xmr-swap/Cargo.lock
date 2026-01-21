@@ -8247,6 +8247,7 @@ dependencies = [
  "spl-token",
  "tokio",
  "xmr_wallet",
+ "zeroize",
 ]
 
 [[package]]

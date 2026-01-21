@@ -3,6 +3,7 @@ use monero::Network;
 use sha2::{Digest, Sha256};
 use std::env;
 use std::path::PathBuf;
+use zeroize::Zeroizing;
 use xmr_wallet::{
     derive_claim_keys, prepare_claim_guard, validate_destination_address, validate_hashlock,
     ClaimParams,
@@ -13,7 +14,7 @@ fn derives_claim_keys_for_network() {
     let params = ClaimParams {
         alice_partial: Scalar::from(2u64),
         bob_partial: Scalar::from(3u64),
-        revealed_secret: [5u8; 32],
+        revealed_secret: Zeroizing::new([5u8; 32]),
         destination_address: "stagenet_placeholder".to_string(),
         network: Network::Stagenet,
         wallet_filename: "claim_wallet".to_string(),

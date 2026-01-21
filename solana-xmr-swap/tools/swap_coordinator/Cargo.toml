@@ -14,6 +14,7 @@ sha2 = "0.10.9"
 tokio = { version = "1.43.0", features = ["macros", "rt-multi-thread"] }
 curve25519-dalek = "4.1"
 monero = "0.21"
+zeroize = "1.7"
 
 anchor-lang = "0.32.1"
 solana-client = "2.3.0"
