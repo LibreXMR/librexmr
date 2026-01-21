@@ -20,6 +20,7 @@ verify it off-chain before calling `verify_dleq`. See `SECURITY.md` for details.
 - Production roadmap: `docs/PRODUCTION.md`
 - Hardening checklist: `docs/HARDENING.md`
 - Stagenet runbook: `docs/STAGENET_RUNBOOK.md`
+- Release checklist: `docs/RELEASE_CHECKLIST.md`
 - Audited libraries: `docs/AUDITED_LIBRARIES.md`
 
 ## RPC Provider
@@ -151,6 +152,18 @@ Run tests:
 ```
 npm test
 ```
+Node version is pinned via `frontend/.nvmrc` (matches Render).
+
+### Debugging
+Enable verbose console logs for swap execution:
+- `VITE_DEBUG_LOGS=true`
+
+### RPC Retries
+Optional retry/backoff tuning for frontend RPC calls:
+- `VITE_RPC_RETRY_MAX`
+- `VITE_RPC_RETRY_BASE_MS`
+- `VITE_RPC_RETRY_MAX_MS`
+- `VITE_RPC_RETRY_JITTER_MS`
 
 ### Deploy Frontend (Render)
 Render works well for static Vite builds:

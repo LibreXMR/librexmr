@@ -32,6 +32,7 @@ make test-rpc
 - [x] RPC timeouts, retry backoff, and jitter.
   - Implement per-call timeout + max retry budget in `tools/xmr_wallet`.
   - Add unit tests for retry count, backoff growth, and timeout handling.
+  - Added Solana RPC timeouts + retries in `swap_coordinator` and frontend fetches.
 - [x] Structured logs without secrets.
 
 ## Helius Integration

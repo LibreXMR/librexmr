@@ -40,6 +40,7 @@
     "docs/DEMO.md",
     "docs/HARDENING.md",
     "docs/STAGENET_RUNBOOK.md",
+    "docs/RELEASE_CHECKLIST.md",
     "docs/AUDITED_LIBRARIES.md",
     "Anchor.toml",
     "Cargo.toml",
